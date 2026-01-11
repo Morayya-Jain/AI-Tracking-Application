@@ -1,0 +1,290 @@
+# AI Study Focus Tracker - Cursor Rules
+
+## Project Overview
+
+This is an AI-powered study focus tracking application that monitors students via webcam, detects distractions (especially phone usage), and generates detailed PDF reports with AI-generated insights.
+
+**Tech Stack:**
+- Python 3.9+
+- OpenAI Vision API (gpt-4o-mini) for detection
+- OpenAI GPT API for summaries
+- OpenCV for camera capture
+- ReportLab for PDF generation
+
+**Key Architecture:**
+- Real-time detection using OpenAI Vision API (1 FPS)
+- Session-based tracking with JSON persistence
+- Event logging (present, away, phone_suspected)
+- AI-generated insights and suggestions
+
+## Code Standards
+
+### General
+- Use descriptive variable, function, and class names
+- Add simple, understandable comments where relevant (don't overdo it)
+- Add docstrings for every function
+- Keep code human-like and readable
+- Well-organized and modular with clear separation of concerns
+- Use type hints for function parameters and returns
+
+### Python Specific
+- Python 3.9+ features
+- Use pathlib for file paths
+- Use type hints (from typing import ...)
+- Use dataclasses where appropriate
+- Follow PEP 8 style guide
+- Use logging module (not print) for internal logs
+
+## Project Structure
+
+```
+focus_tracker/
+├── main.py                    # CLI entry point
+├── config.py                  # All configuration constants
+├── camera/
+│   ├── capture.py            # Webcam management (OpenCV)
+│   ├── vision_detector.py    # AI-powered detection (OpenAI Vision API)
+│   ├── detection.py          # Legacy (not used)
+│   └── phone_detector.py     # Legacy (not used)
+├── tracking/
+│   ├── session.py            # Session class with event logging
+│   └── analytics.py          # Statistics computation
+├── ai/
+│   └── summariser.py         # OpenAI GPT integration for summaries
+├── reporting/
+│   └── pdf_report.py         # PDF generation (ReportLab)
+├── data/sessions/            # JSON session files
+├── reports/                  # Generated PDF reports
+└── tests/                    # Unit tests
+```
+
+## Key Architectural Decisions
+
+### 1. AI-Powered Detection (Primary System)
+- **ALL detection uses OpenAI Vision API** (no hardcoded methods)
+- Send camera frames to OpenAI every second (configurable via DETECTION_FPS)
+- Vision API returns: person_present, phone_visible, distraction_type
+- NO fallback methods - AI is the only detection method
+
+### 2. Privacy & Data
+- Camera frames sent to OpenAI (not stored locally)
+- OpenAI retains for 30 days (abuse monitoring), then deletes
+- Session data saved as JSON (timestamps + event types only)
+- NO video recordings saved locally
+
+### 3. Event System
+Three event types tracked:
+- `present`: Person at desk, focused
+- `away`: Person not visible
+- `phone_suspected`: Phone detected in frame
+
+Events have: type, start time, end time, duration
+
+### 4. Cost Optimization
+- Vision API is expensive (~$0.06-0.12 per minute)
+- Use caching (1 second cache duration)
+- Use "low" detail in vision requests
+- Configurable detection frequency (DETECTION_FPS)
+
+## Important Constants (config.py)
+
+```python
+# AI Models
+OPENAI_MODEL = "gpt-4o-mini"  # Text summaries
+OPENAI_VISION_MODEL = "gpt-4o-mini"  # Image analysis
+
+# Detection settings
+DETECTION_FPS = 1  # Frames per second to analyze
+PHONE_CONFIDENCE_THRESHOLD = 0.5  # Vision API confidence
+PHONE_DETECTION_DURATION_SECONDS = 2  # Sustained detection
+
+# Paths
+DATA_DIR = BASE_DIR / "data" / "sessions"
+REPORTS_DIR = BASE_DIR / "reports"
+```
+
+## Module Guidelines
+
+### camera/vision_detector.py
+- Primary detection system
+- Uses OpenAI Vision API
+- analyze_frame() is the main entry point
+- Returns structured detection dictionary
+- Implements caching to reduce API calls
+- Handles JSON parsing from Vision API responses
+
+### tracking/session.py
+- Session lifecycle management
+- Event logging with state change detection
+- JSON serialization/deserialization
+- Print console updates for major state changes
+
+### tracking/analytics.py
+- Compute statistics from events
+- Math MUST add up: present + away + phone = total
+- Event consolidation (merge consecutive similar events)
+- Time formatting helpers
+
+### ai/summariser.py
+- Generate summaries using OpenAI GPT API
+- Direct, factual tone (not overly encouraging)
+- Retry logic with exponential backoff
+- Handle both JSON-supporting and non-JSON models
+
+### reporting/pdf_report.py
+- Professional PDF generation using ReportLab
+- _format_time() for human-readable durations (1m 30s not 1.5 minutes)
+- Statistics table, timeline, AI insights
+- Color-coded, well-structured layout
+
+## Common Patterns
+
+### Error Handling
+```python
+try:
+    # Operation
+    result = operation()
+except Exception as e:
+    logger.error(f"Error in operation: {e}")
+    # Return safe default or re-raise
+```
+
+### API Calls with Retry
+```python
+for attempt in range(max_retries):
+    try:
+        response = api_call()
+        return response
+    except Exception as e:
+        if attempt < max_retries - 1:
+            time.sleep(retry_delay * (2 ** attempt))
+        else:
+            raise
+```
+
+### Time Formatting
+```python
+# Always use _format_time() for display
+# Returns: "45s", "1m 30s", "2h 15m 30s"
+display_time = _format_time(minutes)
+```
+
+## Important Constraints
+
+### What NOT to Do
+- ❌ NO hardcoded detection methods (no MediaPipe, no OpenCV shapes)
+- ❌ NO fallback detection (AI-only by design)
+- ❌ NO saving video frames to disk
+- ❌ NO generic AI cheerleading ("Great job! Amazing!")
+- ❌ NO statistics that don't add up
+- ❌ NO time displays like "0.0 minutes"
+
+### What TO Do
+- ✅ Use OpenAI Vision API for all detection
+- ✅ Direct, factual AI tone
+- ✅ Ensure math always adds up (present + away + phone = total)
+- ✅ Format times as "1m 30s" not "1.5 minutes"
+- ✅ Log important events to logger
+- ✅ Add docstrings to all functions
+- ✅ Handle API errors gracefully
+
+## Testing
+
+### Unit Tests
+- Session tracking: tests/test_session.py
+- Analytics: tests/test_analytics.py
+- Run with: `python3 -m unittest tests.test_session`
+
+### Integration Tests
+- test_openai.py: Tests OpenAI API integration
+- Manual testing: camera detection, PDF generation
+
+### Manual Testing Checklist
+1. Camera opens successfully
+2. Vision API detects person presence
+3. Vision API detects phone when visible
+4. Events logged correctly
+5. Statistics math adds up
+6. PDF generates successfully
+7. AI summary is direct and specific
+
+## Cost Awareness
+
+**Always consider API costs when making changes:**
+- Each vision API call: ~$0.001-0.002
+- 1 FPS = 60 calls/minute = ~$0.06-0.12/min
+- 2 FPS doubles the cost
+- Balance accuracy vs cost
+
+## Future Extensibility
+
+### Adding New Detection Types
+1. Update vision_detector.py prompt to include new field
+2. Add new event type to config.py
+3. Update session.py to handle new event type
+4. Update analytics to compute stats for new type
+5. Update PDF to display new metric
+
+### Adding New AI Models
+- All models configured in config.py
+- System auto-detects JSON mode support
+- Easy to swap models (just change constant)
+
+## Dependencies Management
+
+### Core Dependencies
+```
+opencv-python>=4.8.0      # Camera capture
+openai>=1.0.0             # AI integration
+reportlab>=4.0.0          # PDF generation
+python-dotenv>=1.0.0      # Environment variables
+```
+
+### Company Network Considerations
+- Uses Square's Artifactory mirror for packages
+- May require internal network for installations
+- No external model downloads (all via OpenAI API)
+
+## Development Workflow
+
+1. **Make changes** to appropriate module
+2. **Test locally** with short sessions
+3. **Check OpenAI usage** on dashboard
+4. **Verify PDF output** looks correct
+5. **Check logs** for any errors
+6. **Commit** with descriptive messages
+
+## Common Issues & Solutions
+
+### Issue: "Vision API Error: Expecting value"
+**Solution:** Check JSON parsing in vision_detector.py, handle markdown code blocks
+
+### Issue: "Statistics don't add up"
+**Solution:** Verify analytics.py: present + away + phone should equal total
+
+### Issue: "Phone not detected"
+**Solution:** Check Vision API logs, verify confidence threshold, ensure phone visible in frame
+
+### Issue: "API key not found"
+**Solution:** Verify .env file exists with OPENAI_API_KEY=sk-...
+
+### Issue: "Credits not decreasing"
+**Solution:** Check if Vision API is actually being called (look for HTTP POST logs)
+
+## When Helping With This Project
+
+1. **Understand the AI-first architecture** - Everything uses OpenAI now
+2. **Be cost-aware** - Vision API is expensive, optimize when possible
+3. **Maintain code quality** - Docstrings, type hints, clean code
+4. **Test thoroughly** - Changes affect real-time detection
+5. **Document changes** - Update relevant .md files
+6. **Consider privacy** - Be transparent about what's sent to OpenAI
+
+## Current State
+
+**Version:** 1.0 (AI-Powered Edition)
+**Status:** Fully functional
+**Architecture:** AI-first (OpenAI Vision + GPT)
+**Detection:** Working via Vision API
+**Known Issues:** None critical
+**Next Steps:** GUI, dashboard, better PDF visualizations
