@@ -45,9 +45,9 @@ def compute_statistics(events: List[Dict[str, Any]], total_duration: float) -> D
     away_minutes = away_seconds / 60
     phone_minutes = phone_seconds / 60
     
-    # Focused time = present time - phone time
-    # (assuming phone usage only happens when present)
-    focused_minutes = max(0, present_minutes - phone_minutes)
+    # Focused time = present time (phone is tracked separately, not subtracted)
+    # Total should equal: present + away + phone
+    focused_minutes = present_minutes
     
     # Consolidate events for timeline
     consolidated = consolidate_events(events)

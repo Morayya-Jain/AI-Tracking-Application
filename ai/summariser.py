@@ -114,34 +114,29 @@ class SessionSummariser:
         
         timeline_str = "\n".join(timeline) if timeline else "No events recorded"
         
-        prompt = f"""You are a supportive study coach analyzing a student's focus session.
+        prompt = f"""You are analyzing a study session. Be direct and specific.
 
-Session Statistics:
-- Total Duration: {total_min:.1f} minutes
-- Focused Time: {focused_min:.1f} minutes ({focus_pct:.1f}%)
-- Time Away: {away_min:.1f} minutes
-- Phone Usage: {phone_min:.1f} minutes
+Session Data:
+- Total: {total_min:.1f} minutes
+- Present: {total_min - away_min:.1f} minutes  
+- Away: {away_min:.1f} minutes
+- Phone: {phone_min:.1f} minutes
+- Focus rate: {focus_pct:.1f}%
 
 Event Timeline:
 {timeline_str}
 
-Please provide:
-1. A short, friendly, encouraging paragraph (2-3 sentences) summarizing their session. Be supportive and highlight positives.
-2. 3-5 specific, actionable suggestions to improve their focus in future sessions.
+Provide:
+1. A direct, specific summary (2-3 sentences). State facts, be honest, no fluff.
+2. 3 specific, actionable points to improve.
 
-Format your response as JSON:
+Format as JSON:
 {{
-  "summary": "your friendly summary here",
-  "suggestions": [
-    "suggestion 1",
-    "suggestion 2",
-    "suggestion 3",
-    "suggestion 4",
-    "suggestion 5"
-  ]
+  "summary": "your direct summary",
+  "suggestions": ["specific point 1", "specific point 2", "specific point 3"]
 }}
 
-Keep suggestions practical and positive. Focus on what they can do differently next time."""
+Be straight to the point. If focus was poor, say it. If it was good, say it. No generic encouragement."""
         
         return prompt
     
@@ -167,8 +162,8 @@ Keep suggestions practical and positive. Focus on what they can do differently n
                 "messages": [
                     {
                         "role": "system",
-                        "content": "You are a supportive study coach who provides "
-                                 "encouraging feedback and practical suggestions."
+                        "content": "You are a direct study analyst. Be specific and honest, "
+                                 "not overly encouraging. State facts clearly."
                     },
                     {
                         "role": "user",

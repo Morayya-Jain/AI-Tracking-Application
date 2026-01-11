@@ -133,17 +133,17 @@ def generate_report(
     # Statistics section
     story.append(Paragraph("📊 Session Statistics", heading_style))
     
-    # Create statistics table
+    # Create statistics table - straightforward, no fluff
     stats_data = [
         ['Metric', 'Value'],
         ['Total Duration', _format_time(stats['total_minutes'])],
-        ['Focused Time', _format_time(stats['focused_minutes'])],
-        ['Time Away', _format_time(stats['away_minutes'])],
+        ['Present at Desk', _format_time(stats['present_minutes'])],
+        ['Away from Desk', _format_time(stats['away_minutes'])],
         ['Phone Usage', _format_time(stats['phone_minutes'])],
     ]
     
-    # Calculate focus percentage
-    focus_pct = (stats['focused_minutes'] / stats['total_minutes'] * 100) if stats['total_minutes'] > 0 else 0
+    # Calculate focus percentage (time present without phone / total time)
+    focus_pct = ((stats['present_minutes'] - stats['phone_minutes']) / stats['total_minutes'] * 100) if stats['total_minutes'] > 0 else 0
     stats_data.append(['Focus Rate', f"{focus_pct:.1f}%"])
     
     stats_table = Table(stats_data, colWidths=[3 * inch, 2.5 * inch])
@@ -206,15 +206,15 @@ def generate_report(
     
     story.append(Spacer(1, 0.3 * inch))
     
-    # AI Summary section
-    story.append(Paragraph("🤖 AI-Powered Insights", heading_style))
+    # AI Summary section - direct and to the point
+    story.append(Paragraph("💬 Session Analysis", heading_style))
     
     summary_text = summary_data.get('summary', 'No summary available.')
     story.append(Paragraph(summary_text, styles['Normal']))
     story.append(Spacer(1, 0.2 * inch))
     
-    # Suggestions section
-    story.append(Paragraph("💡 Suggestions for Improvement", heading_style))
+    # Suggestions section - actionable points
+    story.append(Paragraph("📌 Key Points", heading_style))
     
     suggestions = summary_data.get('suggestions', [])
     if suggestions:
