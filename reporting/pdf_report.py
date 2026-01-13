@@ -89,9 +89,22 @@ def _add_header(canvas_obj, doc):
     canvas_obj.restoreState()
 
 
-def _create_page_template(canvas_obj, doc):
+def _create_first_page_template(canvas_obj, doc):
     """
-    Create custom page template with gradient and header.
+    Create custom page template for first page with gradient and header.
+    
+    Args:
+        canvas_obj: ReportLab canvas object
+        doc: Document object
+    """
+    _add_gradient_background(canvas_obj, doc)
+    _add_header(canvas_obj, doc)
+
+
+def _create_later_page_template(canvas_obj, doc):
+    """
+    Create custom page template for later pages with gradient and header.
+    Uses smaller top margin for natural content flow.
     
     Args:
         canvas_obj: ReportLab canvas object
@@ -168,12 +181,13 @@ def generate_report(
     filepath = output_dir / filename
     
     # Create PDF document with custom template
+    # Reduced topMargin so continuation pages don't have large gaps
     doc = SimpleDocTemplate(
         str(filepath),
         pagesize=letter,
         rightMargin=60,
         leftMargin=60,
-        topMargin=80,
+        topMargin=60,  # Reduced from 80 to 60 for better continuation
         bottomMargin=60
     )
     
@@ -192,7 +206,7 @@ def generate_report(
         fontSize=28,
         textColor=colors.HexColor('#2C3E50'),
         spaceAfter=20,
-        spaceBefore=10,
+        spaceBefore=20,  # Added space for first page to account for reduced topMargin
         alignment=TA_LEFT,
         leading=34
     )
@@ -234,61 +248,89 @@ def generate_report(
     
     # Session metadata as subtitle with date and time range
     date_str = start_time.strftime("%B %d, %Y")
-    start_time_str = start_time.strftime("%I:%M")
+    start_time_str = start_time.strftime("%I:%M%p").lstrip('0').replace(' ', '')
     
-    # Build time range string
+    # Build time range string - always show "from X - Y" format
     if end_time:
-        end_time_str = end_time.strftime("%I:%M%p")  # No space before AM/PM
-        # Remove leading zero from hours if present
-        start_time_str = start_time_str.lstrip('0').replace(' ', '')
-        end_time_str = end_time_str.lstrip('0').replace(' ', '')
+        end_time_str = end_time.strftime("%I:%M%p").lstrip('0').replace(' ', '')
         metadata = f"{date_str} from {start_time_str} - {end_time_str}"
     else:
-        start_time_str = start_time.strftime("%I:%M%p").lstrip('0').replace(' ', '')  # No space before AM/PM
-        metadata = f"{date_str} at {start_time_str}"
+        # If no end time, use start time for both (session still in progress)
+        metadata = f"{date_str} from {start_time_str} - {start_time_str}"
     
     story.append(Paragraph(metadata, subtitle_style))
     
     # Statistics section
-    story.append(Paragraph("Session Statistics", heading_style))
+    story.append(Paragraph("Summary Statistics", heading_style))
     
     # Create statistics table with modern, clean design
-    stats_data = [
-        ['Metric', 'Value'],
-        ['Total Duration', _format_time(stats['total_minutes'])],
-        ['Present at Desk', _format_time(stats['present_minutes'])],
-        ['Away from Desk', _format_time(stats['away_minutes'])],
-        ['Phone Usage', _format_time(stats['phone_minutes'])],
-    ]
-    
     # Calculate focus percentage (present time / total time)
     # Note: Phone time is separate from present time, not subtracted from it
     focus_pct = (stats['present_minutes'] / stats['total_minutes'] * 100) if stats['total_minutes'] > 0 else 0
     # Format percentage without .0 decimal
     focus_pct_str = f"{int(focus_pct)}%" if focus_pct == int(focus_pct) else f"{focus_pct:.1f}%"
-    stats_data.append(['Focus Rate', focus_pct_str])
     
-    stats_table = Table(stats_data, colWidths=[3.0 * inch, 3.0 * inch])  # Total 6.0 inches to match timeline table
-    stats_table.setStyle(TableStyle([
+    # Build table data, only including rows with non-zero values
+    stats_data = [['Category', 'Duration']]
+    
+    # Track which rows we add for color coding later
+    row_types = []  # Will store 'present', 'away', 'phone', 'total', 'focus'
+    
+    # Add rows conditionally based on non-zero values
+    if stats['present_minutes'] > 0:
+        stats_data.append(['Present at Desk', _format_time(stats['present_minutes'])])
+        row_types.append('present')
+    
+    if stats['away_minutes'] > 0:
+        stats_data.append(['Away from Desk', _format_time(stats['away_minutes'])])
+        row_types.append('away')
+    
+    if stats['phone_minutes'] > 0:
+        stats_data.append(['Phone Usage', _format_time(stats['phone_minutes'])])
+        row_types.append('phone')
+    
+    # Always add Total Time and Focus Rate
+    stats_data.append(['Total Time', _format_time(stats['total_minutes'])])
+    row_types.append('total')
+    stats_data.append(['Focus Rate', focus_pct_str])
+    row_types.append('focus')
+    
+    stats_table = Table(stats_data, colWidths=[3.0 * inch, 3.0 * inch])
+    
+    # Build table style dynamically based on which rows are present
+    table_style = [
         # Header row
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4A90E2')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('FONTNAME', (0, 0), (-1, 0), 'Times-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 13),  # Increased from 12 to 13
+        ('FONTSIZE', (0, 0), (-1, 0), 13),
         ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
         ('TOPPADDING', (0, 0), (-1, 0), 12),
-        # Data rows
+        # Data rows (regular)
         ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#F8FAFB')),
         ('FONTNAME', (0, 1), (0, -1), 'Times-Roman'),
-        ('FONTNAME', (1, 1), (1, -1), 'Times-Bold'),
+        ('FONTNAME', (1, 1), (1, -1), 'Times-Roman'),
         ('FONTSIZE', (0, 1), (-1, -1), 11),
         ('TOPPADDING', (0, 1), (-1, -1), 10),
         ('BOTTOMPADDING', (0, 1), (-1, -1), 10),
         ('LINEBELOW', (0, 0), (-1, 0), 2, colors.HexColor('#4A90E2')),
         ('LINEBELOW', (0, 1), (-1, -2), 0.5, colors.HexColor('#E0E6ED')),
         ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#2C3E50')),
-    ]))
+    ]
+    
+    # Apply colors dynamically based on which rows exist
+    for i, row_type in enumerate(row_types, 1):  # Start at 1 to skip header
+        if row_type == 'present':
+            table_style.append(('TEXTCOLOR', (0, i), (0, i), colors.HexColor('#1B7A3D')))
+        elif row_type in ['away', 'phone']:
+            table_style.append(('TEXTCOLOR', (0, i), (0, i), colors.HexColor('#C62828')))
+        elif row_type in ['total', 'focus']:
+            # Make Total Time and Focus Rate bold in both columns
+            table_style.append(('FONTNAME', (0, i), (0, i), 'Times-Bold'))
+            table_style.append(('FONTNAME', (1, i), (1, i), 'Times-Bold'))
+    
+    stats_table.setStyle(TableStyle(table_style))
     
     story.append(stats_table)
     story.append(Spacer(1, 0.3 * inch))  # Reduced from 0.4 to 0.3
@@ -298,47 +340,67 @@ def generate_report(
     
     events = stats.get('events', [])
     if events:
-        # Limit to most significant events for readability
-        display_events = events[:8]
+        # Filter out events with 0 duration and limit to first 8
+        non_zero_events = [e for e in events if e.get('duration_minutes', 0) > 0]
+        display_events = non_zero_events[:8]
         
-        timeline_data = [['Time', 'Activity', 'Duration']]
-        for event in display_events:
-            timeline_data.append([
-                f"{event['start']} - {event['end']}",
-                event['type_label'],
-                _format_time(event['duration_minutes'])
-            ])
-        
-        if len(events) > 8:
-            timeline_data.append(['...', f'{len(events) - 8} more events', '...'])
-        
-        timeline_table = Table(timeline_data, colWidths=[2.4 * inch, 2.2 * inch, 1.4 * inch])
-        timeline_table.setStyle(TableStyle([
-            # Header - now matches first table color
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4A90E2')),  # Changed from #5DADE2 to match first table
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Times-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 12),  # Increased from 11 to 12
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('TOPPADDING', (0, 0), (-1, 0), 12),
-            # Data rows
-            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#F8FAFB')),
-            ('FONTNAME', (0, 1), (1, -1), 'Times-Roman'),  # Time and Activity columns
-            ('FONTNAME', (2, 1), (2, -1), 'Times-Bold'),  # Duration column bold
-            ('FONTSIZE', (0, 1), (-1, -1), 10),
-            ('TOPPADDING', (0, 1), (-1, -1), 10),
-            ('BOTTOMPADDING', (0, 1), (-1, -1), 10),
-            ('LINEBELOW', (0, 0), (-1, 0), 2, colors.HexColor('#4A90E2')),  # Changed to match
-            ('LINEBELOW', (0, 1), (-1, -2), 0.5, colors.HexColor('#E0E6ED')),
-            ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#2C3E50')),
-        ]))
-        
-        story.append(timeline_table)
+        if display_events:  # Only create table if there are events to show
+            timeline_data = [['Time', 'Activity', 'Duration']]
+            for event in display_events:
+                timeline_data.append([
+                    f"{event['start']} - {event['end']}",
+                    event['type_label'],
+                    _format_time(event['duration_minutes'])
+                ])
+            
+            if len(non_zero_events) > 8:
+                timeline_data.append(['...', f'{len(non_zero_events) - 8} more events', '...'])
+            
+            timeline_table = Table(timeline_data, colWidths=[2.4 * inch, 2.2 * inch, 1.4 * inch])
+            
+            # Build base table style
+            table_style = [
+                # Header - now matches first table color
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4A90E2')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Times-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('TOPPADDING', (0, 0), (-1, 0), 12),
+                # Data rows
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#F8FAFB')),
+                ('FONTNAME', (0, 1), (-1, -1), 'Times-Roman'),  # All columns regular (not bold)
+                ('FONTSIZE', (0, 1), (-1, -1), 10),
+                ('TOPPADDING', (0, 1), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 1), (-1, -1), 10),
+                ('LINEBELOW', (0, 0), (-1, 0), 2, colors.HexColor('#4A90E2')),
+                ('LINEBELOW', (0, 1), (-1, -2), 0.5, colors.HexColor('#E0E6ED')),
+                ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#2C3E50')),
+            ]
+            
+            # Add color coding for Activity column based on event type
+            for i, event in enumerate(display_events, 1):  # Start at 1 to skip header
+                event_type = event.get('type', '')
+                if event_type == 'present':
+                    # Focused/Present = dark green
+                    table_style.append(('TEXTCOLOR', (1, i), (1, i), colors.HexColor('#1B7A3D')))
+                elif event_type in ['away', 'phone_suspected']:
+                    # Away/Phone = red
+                    table_style.append(('TEXTCOLOR', (1, i), (1, i), colors.HexColor('#C62828')))
+            
+            timeline_table.setStyle(TableStyle(table_style))
+            
+            story.append(timeline_table)
+        else:
+            story.append(Paragraph("No events recorded.", body_style))
     else:
         story.append(Paragraph("No events recorded.", body_style))
     
     story.append(Spacer(1, 0.25 * inch))  # Reduced from 0.4 to 0.25
+    
+    # Force Session Summary to start on second page
+    story.append(PageBreak())
     
     # AI Summary section - keep together to prevent page break
     heading_style_keepwithnext = ParagraphStyle(
@@ -382,7 +444,7 @@ def generate_report(
     
     # Build PDF with custom page template
     try:
-        doc.build(story, onFirstPage=_create_page_template, onLaterPages=_create_page_template)
+        doc.build(story, onFirstPage=_create_first_page_template, onLaterPages=_create_later_page_template)
         logger.info(f"PDF report generated: {filepath}")
         return filepath
     except Exception as e:

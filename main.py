@@ -279,18 +279,6 @@ class GavinAI:
         print(f"🎯 Focused Time: {focused_min:.1f} minutes ({focus_pct:.1f}%)")
         print(f"🚶 Away Time: {away_min:.1f} minutes")
         print(f"📱 Phone Usage: {phone_min:.1f} minutes")
-        
-        # AI Summary
-        if summary_data.get("summary"):
-            print(f"\n💬 AI Summary:")
-            print(f"   {summary_data['summary']}")
-        
-        # Top suggestions
-        suggestions = summary_data.get("suggestions", [])
-        if suggestions:
-            print(f"\n💡 Top Suggestions:")
-            for i, suggestion in enumerate(suggestions[:3], 1):
-                print(f"   {i}. {suggestion}")
 
 
 def main():

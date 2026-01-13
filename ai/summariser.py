@@ -114,7 +114,7 @@ class SessionSummariser:
         
         timeline_str = "\n".join(timeline) if timeline else "No events recorded"
         
-        prompt = f"""You are analyzing a study session. Be direct, specific, and insightful. Focus on patterns, behaviors, and actionable insights.
+        prompt = f"""You are analyzing a study session. Write like a helpful friend but not too sugarcoated - direct, insightful, conversational, and down-to-earth. Avoid overly formal or exaggerated language. Focus on patterns, behaviors, and actionable insights.
 
 Session Data:
 - Total: {total_min:.1f} minutes
@@ -127,32 +127,34 @@ Event Timeline:
 {timeline_str}
 
 Provide:
-1. A detailed, insightful summary (4-5 sentences): 
-   - Start with overall session quality assessment
-   - Identify specific behavior patterns (e.g., frequent short breaks vs few long breaks, phone usage patterns)
-   - Note the timing and context of distractions
-   - Highlight what worked well and what didn't
+1. A natural but detailed and insightful conversational summary (4-5 sentences): 
+   - How did the session go overall?
+   - What patterns did you notice? (like frequent breaks, phone usage timing, etc.)
+   - What seemed to work and what didn't?
+   - Be honest but not harsh/rude - talk like you're telling a friend
    - Be honest and analytical, not just descriptive
 
-2. 4-5 highly specific, actionable takeaways that go beyond generic advice:
-   - Base recommendations on the actual patterns observed in THIS session
-   - Reference specific times or events when relevant
-   - Suggest concrete techniques or strategies, not vague improvements
-   - Include at least one positive reinforcement if deserved
-   - Prioritize by impact (most important suggestions first)
+2. 4-5 practical, specific suggestions:
+   - Base them on what actually happened in THIS session
+   - Mention specific times or patterns when it helps
+   - Give concrete ideas, not vague advice
+   - Include something positive if there's something worth noting
+   - Keep the tone casual and helpful, not preachy, but also direct and honest
 
 Important: 
+- Keep the language natural and human - avoid words like "commendable," "leverage," "capitalize," "demonstrates," "exceptional"
+- Use simpler alternatives: instead of "demonstrated strong concentration," say "you stayed focused well"
 - When mentioning time durations, display values less than 1 minute in seconds (e.g., "45 seconds" not "0.75 minutes")
-- Make each takeaway distinct and valuable - avoid repetition
-- Be specific to THIS session's data, not generic study advice
+- Make each suggestion unique - avoid repetition
+- Be specific to what happened in THIS session
 
 Format as JSON:
 {{
-  "summary": "your detailed analytical summary",
-  "suggestions": ["specific takeaway 1", "specific takeaway 2", "specific takeaway 3", "specific takeaway 4", "specific takeaway 5"]
+  "summary": "your natural, conversational summary",
+  "suggestions": ["practical tip 1", "practical tip 2", "practical tip 3", "practical tip 4", "practical tip 5"]
 }}
 
-Be analytical and direct. Identify real patterns. If focus was poor, explain why based on the data. If it was good, note what behaviors contributed to that success."""
+Write like you're talking to someone, not writing an academic report. Be helpful and honest without being overly positive or negative."""
         
         return prompt
     
@@ -178,10 +180,9 @@ Be analytical and direct. Identify real patterns. If focus was poor, explain why
                 "messages": [
                     {
                         "role": "system",
-                        "content": "You are an expert study session analyst. Your role is to identify "
-                                 "behavioral patterns, provide deep insights, and deliver highly specific, "
-                                 "actionable recommendations based on the data. Be direct, analytical, and "
-                                 "honest."
+                        "content": "You are a friendly but not too friendly study session analyst. Talk like a real person - "
+                                 "conversational, helpful, and down-to-earth. Avoid formal or exaggerated "
+                                 "language. Give honest, practical feedback based on what you see in the data."
                     },
                     {
                         "role": "user",
