@@ -114,7 +114,7 @@ class SessionSummariser:
         
         timeline_str = "\n".join(timeline) if timeline else "No events recorded"
         
-        prompt = f"""You are analyzing a study session. Be direct and specific.
+        prompt = f"""You are analyzing a study session. Be direct, specific, and insightful. Focus on patterns, behaviors, and actionable insights.
 
 Session Data:
 - Total: {total_min:.1f} minutes
@@ -127,18 +127,32 @@ Event Timeline:
 {timeline_str}
 
 Provide:
-1. A direct, specific summary (2-3 sentences). State facts, be honest, no fluff.
-2. 3 specific, actionable points to improve.
+1. A detailed, insightful summary (4-5 sentences): 
+   - Start with overall session quality assessment
+   - Identify specific behavior patterns (e.g., frequent short breaks vs few long breaks, phone usage patterns)
+   - Note the timing and context of distractions
+   - Highlight what worked well and what didn't
+   - Be honest and analytical, not just descriptive
 
-Important: When mentioning time durations, display values less than 1 minute in seconds (e.g., "45 seconds" not "0.75 minutes").
+2. 4-5 highly specific, actionable takeaways that go beyond generic advice:
+   - Base recommendations on the actual patterns observed in THIS session
+   - Reference specific times or events when relevant
+   - Suggest concrete techniques or strategies, not vague improvements
+   - Include at least one positive reinforcement if deserved
+   - Prioritize by impact (most important suggestions first)
+
+Important: 
+- When mentioning time durations, display values less than 1 minute in seconds (e.g., "45 seconds" not "0.75 minutes")
+- Make each takeaway distinct and valuable - avoid repetition
+- Be specific to THIS session's data, not generic study advice
 
 Format as JSON:
 {{
-  "summary": "your direct summary",
-  "suggestions": ["specific point 1", "specific point 2", "specific point 3"]
+  "summary": "your detailed analytical summary",
+  "suggestions": ["specific takeaway 1", "specific takeaway 2", "specific takeaway 3", "specific takeaway 4", "specific takeaway 5"]
 }}
 
-Be straight to the point. If focus was poor, say it. If it was good, say it. No generic encouragement."""
+Be analytical and direct. Identify real patterns. If focus was poor, explain why based on the data. If it was good, note what behaviors contributed to that success."""
         
         return prompt
     
@@ -164,8 +178,10 @@ Be straight to the point. If focus was poor, say it. If it was good, say it. No 
                 "messages": [
                     {
                         "role": "system",
-                        "content": "You are a direct study analyst. Be specific and honest, "
-                                 "not overly encouraging. State facts clearly."
+                        "content": "You are an expert study session analyst. Your role is to identify "
+                                 "behavioral patterns, provide deep insights, and deliver highly specific, "
+                                 "actionable recommendations based on the data. Be direct, analytical, and "
+                                 "honest."
                     },
                     {
                         "role": "user",
@@ -173,7 +189,7 @@ Be straight to the point. If focus was poor, say it. If it was good, say it. No 
                     }
                 ],
                 "temperature": 0.7,
-                "max_tokens": 500
+                "max_tokens": 800  # Increased for more detailed summaries and takeaways
             }
             
             # Add JSON mode only if supported
@@ -217,28 +233,42 @@ Be straight to the point. If focus was poor, say it. If it was good, say it. No 
         focus_pct = get_focus_percentage(stats)
         away_min = stats.get("away_minutes", 0)
         phone_min = stats.get("phone_minutes", 0)
+        total_min = stats.get("total_minutes", 0)
         
-        if focus_pct < 70:
+        # Analyze patterns and provide specific feedback
+        if phone_min > 5:
+            phone_pct = (phone_min / total_min * 100) if total_min > 0 else 0
             suggestions.append(
-                "Try to minimize distractions by putting your phone in another room."
+                f"Phone usage accounted for {phone_pct:.1f}% of your session. "
+                f"Try placing your phone in another room or using app blockers like Freedom or Forest."
             )
         
         if away_min > 15:
+            away_pct = (away_min / total_min * 100) if total_min > 0 else 0
             suggestions.append(
-                "Take scheduled breaks instead of random interruptions for better focus."
+                f"You were away for {away_pct:.1f}% of the session. "
+                f"Consider using structured breaks (Pomodoro: 25min work, 5min break) instead of unplanned interruptions."
             )
         
-        if phone_min > 10:
+        if focus_pct >= 80:
             suggestions.append(
-                "Consider using app blockers during study sessions to reduce phone usage."
+                f"Excellent focus rate of {focus_pct:.1f}%! "
+                f"Maintain this pattern by starting sessions at similar times and creating consistent routines."
+            )
+        elif focus_pct < 60:
+            suggestions.append(
+                f"Focus rate of {focus_pct:.1f}% suggests high distraction. "
+                f"Try the 2-minute rule: if tempted to check something, wait 2 minutes. The urge often passes."
             )
         
-        suggestions.append(
-            "Set specific goals before each session to maintain motivation."
-        )
+        if total_min < 30:
+            suggestions.append(
+                "Short sessions can be effective but consider gradually increasing to 45-60 minutes for deeper focus states."
+            )
         
+        # Always include one universal tip
         suggestions.append(
-            "Use the Pomodoro Technique: 25 minutes focused work, 5 minute breaks."
+            "Before your next session, write down 1-3 specific goals. This simple act can increase focus by up to 40%."
         )
         
         return {

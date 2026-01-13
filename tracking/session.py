@@ -35,7 +35,7 @@ class Session:
         day = now.strftime("%A")  # Full day name: Monday, Tuesday, etc.
         time = now.strftime("%I.%M %p")  # Time format: 2.45PM, 9.30AM
         
-        return f"Gavin_AI {day} {time}"
+        return f"Gavin-AI {day} {time}"
     
     def start(self) -> None:
         """Start the session and log the start time."""

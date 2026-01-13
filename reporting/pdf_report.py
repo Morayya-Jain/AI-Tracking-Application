@@ -29,7 +29,8 @@ logger = logging.getLogger(__name__)
 
 def _add_gradient_background(canvas_obj, doc):
     """
-    Add a subtle gradient background to the page.
+    Add a visible gradient background to the page.
+    Darker blue gradient that fades from top to middle of page.
     
     Args:
         canvas_obj: ReportLab canvas object
@@ -37,12 +38,12 @@ def _add_gradient_background(canvas_obj, doc):
     """
     canvas_obj.saveState()
     
-    # Create a smooth gradient from light blue to white
+    # Create a smooth gradient from darker blue to white
     # Fades from top to middle of page
     width, height = letter
     
-    # Use a slightly darker blue for better visibility
-    gradient_color = colors.HexColor('#D6EAF8')  # Darker than #E8F4F8 but still subtle
+    # Use a darker, more visible blue for better aesthetics
+    gradient_color = colors.HexColor('#B8D5E8')  # Darker blue for better visibility
     
     # Create smooth gradient with many steps for seamless blend
     # Goes from top to middle of page (50% of height)
@@ -59,7 +60,7 @@ def _add_gradient_background(canvas_obj, doc):
             gradient_color.red,
             gradient_color.green,
             gradient_color.blue,
-            alpha=alpha * 0.7  # Increased from 0.6 to 0.7 for more visibility
+            alpha=alpha * 0.9  # Increased from 0.7 to 0.9 for more visibility
         )
         
         canvas_obj.setFillColor(color)
@@ -346,11 +347,11 @@ def generate_report(
         keepWithNext=True  # Prevents heading from separating from content
     )
     
-    story.append(Paragraph("Session Analysis", heading_style_keepwithnext))
+    story.append(Paragraph("Session Summary", heading_style_keepwithnext))
     
     summary_text = summary_data.get('summary', 'No summary available.')
     story.append(Paragraph(summary_text, body_style))
-    story.append(Spacer(1, 0.2 * inch))  # Reduced from 0.25 to 0.2
+    story.append(Spacer(1, 0.15 * inch))  # Reduced for tighter spacing between sections
     
     # Suggestions section
     story.append(Paragraph("Key Takeaways", heading_style_keepwithnext))

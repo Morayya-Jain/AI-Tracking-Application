@@ -65,7 +65,7 @@ Returns:
 
 **File:** `main.py` line 191  
 **When:** After you press Enter to end session  
-**What:** Generates AI insights
+**What:** Generates detailed AI insights
 
 ```python
 # After session ends:
@@ -75,12 +75,18 @@ OpenAI GPT API Call (gpt-4o-mini)
     ↓
 Returns:
 {
-  "summary": "Encouraging paragraph...",
-  "suggestions": ["tip 1", "tip 2", ...]
+  "summary": "Detailed 4-5 sentence analysis with behavior patterns...",
+  "suggestions": ["specific takeaway 1", "specific takeaway 2", ...]
 }
 ```
 
-**Cost:** ~$0.0003 per session  
+**Features:**
+- **Detailed Summary (4-5 sentences):** Overall session quality, behavior patterns, timing/context of distractions, what worked vs what didn't
+- **5 Specific Takeaways:** Data-driven recommendations based on actual session patterns, references specific times/events, concrete actionable strategies
+- **Pattern Recognition:** Identifies trends like "strong initial focus followed by phone distraction" or "frequent short breaks vs few long breaks"
+- **Honest Assessment:** Direct analysis without generic encouragement
+
+**Cost:** ~$0.0005 per session (increased due to more detailed output)  
 **Frequency:** Once per session
 
 ---

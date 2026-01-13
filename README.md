@@ -9,8 +9,11 @@ A local AI-powered study session tracker that monitors student presence and **ac
   - ✅ Detects: Person looking at phone + screen ON (whether on desk or in hands)
   - ❌ Ignores: Phone on desk but person looking elsewhere, or screen OFF
 - **Session Analytics**: Computes focused time, away time, and phone usage statistics
-- **AI-Generated Insights**: OpenAI GPT provides personalized summaries and suggestions
-- **PDF Reports**: Professional reports with statistics and AI-generated insights
+- **AI-Generated Insights**: OpenAI GPT provides detailed, personalized summaries and actionable takeaways
+  - 4-5 sentence summaries with behavior pattern analysis
+  - 5 specific, data-driven recommendations with time references
+  - Honest assessment of what worked and what needs improvement
+- **PDF Reports**: Professional reports with elegant gradient design, statistics, and AI-generated insights
 - **Privacy-Conscious**: Camera frames analyzed by OpenAI (30-day retention), no local video storage
 
 ## Requirements
@@ -52,9 +55,10 @@ python main.py
 3. Events are logged (present, away, phone_suspected)
 4. Press 'q' or Enter to end the session
 5. A PDF report is automatically generated with:
-   - Session statistics
-   - Timeline of events
-   - AI-generated summary and suggestions
+   - Session statistics (duration, focus rate, time breakdown)
+   - Timeline of events (showing when you were focused/away/distracted)
+   - **Detailed AI-generated summary**: 4-5 sentence analysis identifying behavior patterns
+   - **5 specific takeaways**: Data-driven recommendations based on your actual session
 
 ### Reports
 
