@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-Get your AI Study Focus Tracker running in 3 minutes!
+Get Gavin AI running in 3 minutes!
 
 ## 1. Install Dependencies (1 minute)
 
@@ -35,7 +35,7 @@ python3 main.py
 ## Example Session
 
 ```
-🎯 AI Study Focus Tracker v1.0
+🎯 Gavin AI - AI-Powered Study Assistant
 ================================================
 
 📚 Press Enter to start your study session...
@@ -50,7 +50,7 @@ python3 main.py
 Session ended. Duration: 45m
 
 📊 Finalizing session...
-✓ Report saved: reports/session_20251209_143000.pdf
+✓ Report saved: ~/Downloads/Gavin_AI Monday 2.30 PM.pdf
 ```
 
 ## Tips for Best Results

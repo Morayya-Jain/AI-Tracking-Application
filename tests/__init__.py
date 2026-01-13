@@ -1,2 +1,2 @@
-"""Test suite for focus tracker."""
+"""Test suite for Gavin AI."""
 

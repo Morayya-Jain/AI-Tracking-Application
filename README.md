@@ -1,4 +1,4 @@
-# AI Study Focus Tracker
+# Gavin AI
 
 A local AI-powered study session tracker that monitors student presence and phone usage via webcam, logs events, and generates PDF reports with OpenAI-powered insights.
 
@@ -55,9 +55,9 @@ python main.py
 
 ### Reports
 
-PDF reports are saved to the `reports/` directory with filenames like:
+PDF reports are automatically saved to your **Downloads folder**:
 ```
-session_20251209_143000.pdf
+~/Downloads/Gavin_AI Monday 2.45 PM.pdf
 ```
 
 Session data is also saved as JSON in `data/sessions/` for future analysis.
@@ -65,7 +65,7 @@ Session data is also saved as JSON in `data/sessions/` for future analysis.
 ## Project Structure
 
 ```
-focus_tracker/
+gavin_ai/
 ├── main.py                    # CLI entry point
 ├── config.py                  # Configuration and constants
 ├── .env.example              # Example environment variables
@@ -87,10 +87,11 @@ focus_tracker/
 │   └── summariser.py        # OpenAI API integration
 ├── data/
 │   └── sessions/            # Stored session JSON files
-├── reports/                  # Generated PDF reports
 └── tests/
     ├── test_session.py
     └── test_analytics.py
+    
+Reports are saved to: ~/Downloads/
 ```
 
 ## Configuration

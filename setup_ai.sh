@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# AI Features Setup Script for Focus Tracker
+# AI Features Setup Script for Gavin AI
 
 clear
 echo "═══════════════════════════════════════════════════════"
-echo "🤖 AI Focus Tracker - AI Features Setup"
+echo "🤖 Gavin AI - AI Features Setup"
 echo "═══════════════════════════════════════════════════════"
 echo ""
 

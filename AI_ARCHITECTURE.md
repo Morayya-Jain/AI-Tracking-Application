@@ -2,11 +2,11 @@
 
 ## 🤖 Complete Architecture Overview
 
-Your Focus Tracker now uses **OpenAI for EVERYTHING**:
+Gavin AI uses **OpenAI for EVERYTHING**:
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  AI-POWERED FOCUS TRACKER ARCHITECTURE              │
+│  GAVIN AI ARCHITECTURE                              │
 ├─────────────────────────────────────────────────────┤
 │                                                      │
 │  Camera Frame                                       │
@@ -27,7 +27,7 @@ Your Focus Tracker now uses **OpenAI for EVERYTHING**:
 │      ├→ Generates: Friendly summary                │
 │      └→ Provides: Personalized suggestions         │
 │      ↓                                              │
-│  PDF Report Generated                               │
+│  PDF Report Generated and Downloaded                 │
 │                                                      │
 └─────────────────────────────────────────────────────┘
 ```

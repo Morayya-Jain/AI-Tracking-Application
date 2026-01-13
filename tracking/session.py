@@ -30,8 +30,12 @@ class Session:
         self.state_start_time: Optional[datetime] = None
         
     def _generate_session_id(self) -> str:
-        """Generate a unique session ID based on current timestamp."""
-        return datetime.now().strftime("session_%Y%m%d_%H%M%S")
+        """Generate a human-readable session ID with day and time."""
+        now = datetime.now()
+        day = now.strftime("%A")  # Full day name: Monday, Tuesday, etc.
+        time = now.strftime("%I.%M %p")  # Time format: 2.45PM, 9.30AM
+        
+        return f"Gavin_AI {day} {time}"
     
     def start(self) -> None:
         """Start the session and log the start time."""

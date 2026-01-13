@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AI Study Focus Tracker - Main CLI Entry Point
+Gavin AI - Main CLI Entry Point
 
 A local AI-powered study session tracker that monitors student presence
 and phone usage via webcam, logs events, and generates PDF reports with
@@ -31,13 +31,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class FocusTracker:
+class GavinAI:
     """
     Main application class that orchestrates the focus tracking session.
     """
     
     def __init__(self):
-        """Initialize the focus tracker."""
+        """Initialize Gavin AI."""
         self.session: Optional[Session] = None
         self.running = False
         self.should_stop = False
@@ -71,7 +71,7 @@ class FocusTracker:
     def display_welcome(self):
         """Display welcome message and instructions."""
         print("\n" + "=" * 60)
-        print("🎯 AI Study Focus Tracker v1.0 (AI-Powered Edition)")
+        print("🎯 Gavin AI - AI-Powered Study Assistant")
         print("=" * 60)
         print("\nThis app will:")
         print("  • Monitor your presence via OpenAI Vision API")
@@ -270,7 +270,7 @@ class FocusTracker:
 
 def main():
     """Main entry point for the application."""
-    tracker = FocusTracker()
+    tracker = GavinAI()
     
     # Display welcome and check requirements
     tracker.display_welcome()

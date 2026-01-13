@@ -1,4 +1,4 @@
-"""Configuration settings for the Focus Tracker application."""
+"""Configuration settings for Gavin AI."""
 
 import os
 from pathlib import Path
@@ -37,11 +37,12 @@ DETECTION_FPS = 1  # Analyze 1 frame per second for performance
 
 # Paths
 DATA_DIR = BASE_DIR / "data" / "sessions"
-REPORTS_DIR = BASE_DIR / "reports"
+# Save reports directly to user's Downloads folder
+REPORTS_DIR = Path.home() / "Downloads"
 
 # Ensure directories exist
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+# Downloads folder always exists, no need to create it
 
 # Event types
 EVENT_PRESENT = "present"

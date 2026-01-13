@@ -1,8 +1,8 @@
-# AI Study Focus Tracker - Cursor Rules
+# Gavin AI - Cursor Rules
 
 ## Project Overview
 
-This is an AI-powered study focus tracking application that monitors students via webcam, detects distractions (especially phone usage), and generates detailed PDF reports with AI-generated insights.
+Gavin AI is an AI-powered study focus tracking application that monitors students via webcam, detects distractions (especially phone usage), and generates detailed PDF reports with AI-generated insights.
 
 **Tech Stack:**
 - Python 3.9+
@@ -38,7 +38,7 @@ This is an AI-powered study focus tracking application that monitors students vi
 ## Project Structure
 
 ```
-focus_tracker/
+gavin_ai/
 ├── main.py                    # CLI entry point
 ├── config.py                  # All configuration constants
 ├── camera/
@@ -54,8 +54,9 @@ focus_tracker/
 ├── reporting/
 │   └── pdf_report.py         # PDF generation (ReportLab)
 ├── data/sessions/            # JSON session files
-├── reports/                  # Generated PDF reports
 └── tests/                    # Unit tests
+
+Reports are saved to: ~/Downloads/
 ```
 
 ## Key Architectural Decisions
