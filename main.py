@@ -21,7 +21,7 @@ from camera.vision_detector import VisionDetector
 from tracking.session import Session
 from tracking.analytics import compute_statistics
 from ai.summariser import SessionSummariser
-from reporting.pdf_report import generate_report
+from reporting.pdf_report import generate_full_report
 
 # Configure logging
 logging.basicConfig(
@@ -232,17 +232,18 @@ class GavinAI:
         session_file = self.session.save()
         print(f"   Session saved: {session_file}")
         
-        # Generate PDF report
-        print("📄 Generating PDF report...")
+        # Generate PDF reports (summary + logs)
+        print("📄 Generating PDF reports...")
         try:
-            report_path = generate_report(
+            summary_path, logs_path = generate_full_report(
                 stats,
                 summary_data,
                 self.session.session_id,
                 self.session.start_time,
                 self.session.end_time
             )
-            print(f"✓ Report saved: {report_path}")
+            print(f"✓ Summary report saved: {summary_path}")
+            print(f"✓ Detailed logs saved: {logs_path}")
         except Exception as e:
             logger.error(f"Failed to generate PDF: {e}")
             print(f"❌ PDF generation failed: {e}")
@@ -251,7 +252,9 @@ class GavinAI:
         # Display summary
         self._display_summary(stats, summary_data)
         
-        print(f"\n📂 Your report is ready: {report_path}")
+        print(f"\n📂 Your reports are ready:")
+        print(f"   Summary: {summary_path}")
+        print(f"   Logs: {logs_path}")
         print("\n" + "=" * 60)
         print("✨ Session complete! Keep up the great work!")
         print("=" * 60 + "\n")
