@@ -221,11 +221,6 @@ class GavinAI:
             self.session.get_duration()
         )
         
-        # Save session data
-        print("💾 Saving session data...")
-        session_file = self.session.save()
-        print(f"   Session saved: {session_file}")
-        
         # Generate PDF report (summary + logs combined)
         print("📄 Generating PDF report...")
         try:

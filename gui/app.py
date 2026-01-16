@@ -784,9 +784,6 @@ By clicking 'I Understand', you acknowledge this data processing."""
                 self.session.get_duration()
             )
             
-            # Save session
-            self.session.save()
-            
             # Generate PDF (combined summary + logs)
             report_path = generate_report(
                 stats,

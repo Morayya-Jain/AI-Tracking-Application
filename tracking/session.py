@@ -1,8 +1,6 @@
 """Session management and event logging."""
 
-import json
 from datetime import datetime
-from pathlib import Path
 from typing import Dict, List, Optional, Any
 import config
 
@@ -128,65 +126,4 @@ class Session:
         
         end = self.end_time or datetime.now()
         return (end - self.start_time).total_seconds()
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Convert session to a dictionary for JSON serialization.
-        
-        Returns:
-            Dictionary containing all session data.
-        """
-        return {
-            "session_id": self.session_id,
-            "start_time": self.start_time.isoformat() if self.start_time else None,
-            "end_time": self.end_time.isoformat() if self.end_time else None,
-            "duration_seconds": self.get_duration(),
-            "events": self.events
-        }
-    
-    def save(self, directory: Optional[Path] = None) -> Path:
-        """
-        Save session data to a JSON file.
-        
-        Args:
-            directory: Optional directory path. If None, uses config.DATA_DIR.
-            
-        Returns:
-            Path to the saved file.
-        """
-        if directory is None:
-            directory = config.DATA_DIR
-        
-        directory.mkdir(parents=True, exist_ok=True)
-        filepath = directory / f"{self.session_id}.json"
-        
-        with open(filepath, 'w') as f:
-            json.dump(self.to_dict(), f, indent=2)
-        
-        return filepath
-    
-    @classmethod
-    def load(cls, filepath: Path) -> 'Session':
-        """
-        Load a session from a JSON file.
-        
-        Args:
-            filepath: Path to the JSON file.
-            
-        Returns:
-            Loaded Session instance.
-        """
-        with open(filepath, 'r') as f:
-            data = json.load(f)
-        
-        session = cls(session_id=data["session_id"])
-        
-        if data["start_time"]:
-            session.start_time = datetime.fromisoformat(data["start_time"])
-        if data["end_time"]:
-            session.end_time = datetime.fromisoformat(data["end_time"])
-        
-        session.events = data["events"]
-        
-        return session
 

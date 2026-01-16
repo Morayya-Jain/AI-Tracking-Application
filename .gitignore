@@ -36,7 +36,8 @@ ENV/
 .env
 
 # Generated files
-data/
+data/sessions
+data/.privacy_accepted
 reports/
 *.log
 

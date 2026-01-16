@@ -120,4 +120,11 @@ python3 -m unittest tests.test_session tests.test_analytics
 
 ---
 
-**Privacy**: Frames → OpenAI (30-day retention) → deleted. Local: JSON events only. No video saved.
+**Privacy**: Frames → OpenAI (30-day retention) → deleted. No local session data saved. No video saved.
+
+---
+
+## 📁 Data Files
+
+- `data/focus_statements.json` - **REQUIRED** - Contains feedback message templates for PDF reports
+- `data/.privacy_accepted` - User-specific flag, gitignored

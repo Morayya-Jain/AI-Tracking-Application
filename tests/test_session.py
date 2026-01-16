@@ -1,10 +1,7 @@
 """Unit tests for session tracking."""
 
 import unittest
-from datetime import datetime, timedelta
 from pathlib import Path
-import tempfile
-import shutil
 import sys
 
 # Add parent directory to path
@@ -20,13 +17,6 @@ class TestSession(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.session = Session(session_id="test_session")
-        # Create a temporary directory for test files
-        self.test_dir = Path(tempfile.mkdtemp())
-    
-    def tearDown(self):
-        """Clean up test fixtures."""
-        if self.test_dir.exists():
-            shutil.rmtree(self.test_dir)
     
     def test_session_initialization(self):
         """Test that a session initializes correctly."""
@@ -38,8 +28,9 @@ class TestSession(unittest.TestCase):
     def test_auto_generated_session_id(self):
         """Test that session ID is auto-generated if not provided."""
         session = Session()
-        self.assertTrue(session.session_id.startswith("session_"))
-        self.assertEqual(len(session.session_id), 23)  # session_YYYYMMDD_HHMMSS
+        # Session ID format: "Gavin-AI {Day} {Time}" e.g. "Gavin-AI Monday 02.30 PM"
+        self.assertTrue(session.session_id.startswith("Gavin-AI "))
+        self.assertIn(" ", session.session_id)  # Contains spaces
     
     def test_session_start(self):
         """Test starting a session."""
@@ -88,39 +79,6 @@ class TestSession(unittest.TestCase):
         duration = self.session.get_duration()
         self.assertGreaterEqual(duration, 0)
         self.assertLess(duration, 1)  # Less than 1 second
-    
-    def test_to_dict(self):
-        """Test converting session to dictionary."""
-        self.session.start()
-        self.session.log_event(config.EVENT_AWAY)
-        self.session.end()
-        
-        data = self.session.to_dict()
-        
-        self.assertEqual(data["session_id"], "test_session")
-        self.assertIsNotNone(data["start_time"])
-        self.assertIsNotNone(data["end_time"])
-        self.assertGreater(data["duration_seconds"], 0)
-        self.assertGreater(len(data["events"]), 0)
-    
-    def test_save_and_load(self):
-        """Test saving and loading a session."""
-        self.session.start()
-        self.session.log_event(config.EVENT_AWAY)
-        self.session.log_event(config.EVENT_PHONE_SUSPECTED)
-        self.session.end()
-        
-        # Save session
-        filepath = self.session.save(directory=self.test_dir)
-        self.assertTrue(filepath.exists())
-        
-        # Load session
-        loaded_session = Session.load(filepath)
-        
-        self.assertEqual(loaded_session.session_id, self.session.session_id)
-        self.assertEqual(len(loaded_session.events), len(self.session.events))
-        self.assertIsNotNone(loaded_session.start_time)
-        self.assertIsNotNone(loaded_session.end_time)
     
     def test_event_structure(self):
         """Test that events have the correct structure."""

@@ -1,8 +1,10 @@
 """PDF report generation using ReportLab."""
 
+import json
 import logging
+import random
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 
 from reportlab.lib.pagesizes import letter
@@ -17,10 +19,16 @@ from reportlab.platypus import (
     TableStyle,
     PageBreak,
     Frame,
-    PageTemplate
+    PageTemplate,
+    Image
 )
+from io import BytesIO
+from PIL import Image as PILImage, ImageDraw, ImageFont
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT, TA_JUSTIFY
 from reportlab.pdfgen import canvas
+from reportlab.graphics.shapes import Drawing, Wedge, Polygon, String, Line
+from reportlab.graphics import renderPDF
+import math
 
 import config
 
@@ -147,6 +155,487 @@ def _format_time(minutes: float) -> str:
             return f"{mins}m {secs}s"
         else:
             return f"{mins}m"
+
+
+# Focus category definitions with colors matching the gauge
+FOCUS_CATEGORIES = {
+    'great': {
+        'min': 90,
+        'max': 100,
+        'label': 'great',
+        'color': '#2E7D32'  # Green
+    },
+    'satisfactory': {
+        'min': 75,
+        'max': 89,
+        'label': 'satisfactory',
+        'color': '#FFCA28'  # Yellow
+    },
+    'poor': {
+        'min': 50,
+        'max': 74,
+        'label': 'poor',
+        'color': '#F57C00'  # Orange
+    },
+    'very_poor': {
+        'min': 0,
+        'max': 49,
+        'label': 'very poor',
+        'color': '#B71C1C'  # Red
+    }
+}
+
+
+def _get_focus_category(focus_pct: float) -> Tuple[str, str, str]:
+    """
+    Determine the focus category based on percentage.
+    
+    Args:
+        focus_pct: Focus percentage (0-100)
+        
+    Returns:
+        Tuple of (category_key, category_label, color_hex)
+    """
+    if focus_pct >= 90:
+        cat = FOCUS_CATEGORIES['great']
+        return ('great', cat['label'], cat['color'])
+    elif focus_pct >= 75:
+        cat = FOCUS_CATEGORIES['satisfactory']
+        return ('satisfactory', cat['label'], cat['color'])
+    elif focus_pct >= 50:
+        cat = FOCUS_CATEGORIES['poor']
+        return ('poor', cat['label'], cat['color'])
+    else:
+        cat = FOCUS_CATEGORIES['very_poor']
+        return ('very_poor', cat['label'], cat['color'])
+
+
+def _load_focus_statements() -> Dict[str, List[str]]:
+    """
+    Load pre-computed focus statements from JSON file.
+    
+    Returns:
+        Dictionary with category keys and lists of statement templates
+    """
+    statements_path = Path(__file__).parent.parent / 'data' / 'focus_statements.json'
+    try:
+        with open(statements_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading focus statements: {e}")
+        # Return fallback statements if file cannot be loaded
+        return {
+            'great': ['Your focus rate of {percentage}% is great - keep it up!'],
+            'satisfactory': ['Your focus rate of {percentage}% is satisfactory - room for improvement.'],
+            'poor': ['Your focus rate of {percentage}% is poor - try to minimize distractions.'],
+            'very_poor': ['Your focus rate of {percentage}% is very poor - significant improvement needed.']
+        }
+
+
+def _get_random_focus_statement(focus_pct: float) -> Tuple[str, str, str]:
+    """
+    Get a random focus statement based on the focus percentage.
+    
+    Args:
+        focus_pct: Focus percentage (0-100)
+        
+    Returns:
+        Tuple of (statement_text, category_label, color_hex)
+    """
+    category_key, category_label, color = _get_focus_category(focus_pct)
+    statements = _load_focus_statements()
+    
+    # Get statements for this category
+    category_statements = statements.get(category_key, [])
+    if not category_statements:
+        category_statements = [f'Your focus rate of {{percentage}}% is {category_label}.']
+    
+    # Pick a random statement
+    statement_template = random.choice(category_statements)
+    
+    # Format the percentage (remove .0 if whole number)
+    pct_str = f"{int(focus_pct)}" if focus_pct == int(focus_pct) else f"{focus_pct:.1f}"
+    statement = statement_template.replace('{percentage}', pct_str)
+    
+    return (statement, category_label, color)
+
+
+def _create_focus_statement_paragraph(focus_pct: float) -> Paragraph:
+    """
+    Create a paragraph with the focus statement, with the category word colored.
+    
+    Args:
+        focus_pct: Focus percentage (0-100)
+        
+    Returns:
+        ReportLab Paragraph object with colored category word
+    """
+    statement, category_label, color = _get_random_focus_statement(focus_pct)
+    
+    # Replace the category word with a colored version using ReportLab markup
+    # The category label appears in the statement (e.g., "is great", "is satisfactory")
+    colored_label = f'<font color="{color}"><b>{category_label}</b></font>'
+    
+    # Replace the category label with the colored version
+    colored_statement = statement.replace(f' {category_label}', f' {colored_label}')
+    
+    # Create paragraph style for the statement
+    statement_style = ParagraphStyle(
+        'FocusStatement',
+        fontName='Times-Italic',
+        fontSize=12,
+        textColor=colors.HexColor('#2C3E50'),
+        alignment=TA_CENTER,
+        leading=16
+    )
+    
+    return Paragraph(colored_statement, statement_style)
+
+
+def _get_random_focus_emoji(focus_pct: float) -> str:
+    """
+    Get a random emoji based on the focus percentage category.
+    
+    Args:
+        focus_pct: Focus percentage (0-100)
+        
+    Returns:
+        A face emoji corresponding to the focus category
+    """
+    category_key, _, _ = _get_focus_category(focus_pct)
+    statements_data = _load_focus_statements()
+    
+    # Get emojis for this category (fallback to neutral face)
+    emojis = statements_data.get('emojis', {}).get(category_key, ['😐'])
+    
+    return random.choice(emojis)
+
+
+def _get_emoji_font_paths() -> list:
+    """
+    Get a list of emoji font paths to try, ordered by platform preference.
+    
+    Returns:
+        List of tuples: (font_path, size) to try in order
+    """
+    import platform
+    system = platform.system()
+    
+    # Default size for scalable fonts
+    default_size = 48
+    
+    # Platform-specific font configurations
+    # Format: (font_path, size) - size is important for bitmap fonts like Apple Color Emoji
+    
+    if system == 'Darwin':  # macOS
+        return [
+            # Apple Color Emoji - bitmap font, only supports fixed sizes
+            ('/System/Library/Fonts/Apple Color Emoji.ttc', 48),
+            ('/System/Library/Fonts/Apple Color Emoji.ttc', 40),
+            ('/System/Library/Fonts/Apple Color Emoji.ttc', 32),
+        ]
+    
+    elif system == 'Windows':
+        return [
+            # Segoe UI Emoji - Windows 10/11 default emoji font
+            ('C:\\Windows\\Fonts\\seguiemj.ttf', default_size),
+            # Alternative paths
+            ('seguiemj.ttf', default_size),  # Let system find it
+            # Older Windows might have different emoji support
+            ('C:\\Windows\\Fonts\\segoe ui emoji.ttf', default_size),
+        ]
+    
+    else:  # Linux and others
+        return [
+            # Noto Color Emoji - most common on Linux
+            # Ubuntu/Debian
+            ('/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf', default_size),
+            # Fedora/RHEL
+            ('/usr/share/fonts/google-noto-emoji/NotoColorEmoji.ttf', default_size),
+            # Arch Linux
+            ('/usr/share/fonts/noto-color-emoji/NotoColorEmoji.ttf', default_size),
+            # Generic noto path
+            ('/usr/share/fonts/noto/NotoColorEmoji.ttf', default_size),
+            # Twitter Color Emoji (alternative on some systems)
+            ('/usr/share/fonts/truetype/twitter-color-emoji/TwitterColorEmoji-SVGinOT.ttf', default_size),
+            # Twemoji
+            ('/usr/share/fonts/truetype/twemoji/Twemoji.ttf', default_size),
+            # JoyPixels/EmojiOne
+            ('/usr/share/fonts/joypixels/JoyPixels.ttf', default_size),
+        ]
+
+
+def _create_focus_emoji_image(focus_pct: float) -> Optional[Table]:
+    """
+    Create a centered emoji image for the focus category.
+    
+    Renders the emoji using platform-specific color emoji fonts.
+    Supports macOS (Apple Color Emoji), Windows (Segoe UI Emoji),
+    and Linux (Noto Color Emoji, Twitter Emoji, etc.).
+    
+    Returns None if no emoji font is available (no fallback).
+    
+    Args:
+        focus_pct: Focus percentage (0-100)
+        
+    Returns:
+        ReportLab Table containing the centered emoji image, or None if unavailable
+    """
+    emoji = _get_random_focus_emoji(focus_pct)
+    
+    # Default size (will be updated if font loads successfully)
+    emoji_size = 48
+    
+    # Try to load emoji font (platform-specific order)
+    font = None
+    font_configs = _get_emoji_font_paths()
+    
+    for font_path, size in font_configs:
+        try:
+            font = ImageFont.truetype(font_path, size)
+            emoji_size = size  # Update to the size that worked
+            logger.debug(f"Loaded emoji font: {font_path} at size {size}")
+            break
+        except (OSError, IOError) as e:
+            logger.debug(f"Could not load font {font_path}: {e}")
+            continue
+    
+    # If no emoji font found, don't display anything
+    if not font:
+        logger.info("No emoji font available - skipping emoji display")
+        return None
+    
+    # Create image with transparent background
+    img_size = int(emoji_size * 1.2)
+    img = PILImage.new('RGBA', (img_size, img_size), (255, 255, 255, 0))
+    draw = ImageDraw.Draw(img)
+    
+    # Calculate position to center the emoji
+    bbox = draw.textbbox((0, 0), emoji, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+    x = (img_size - text_width) // 2
+    y = (img_size - text_height) // 2 - bbox[1]
+    
+    # Draw the emoji with color support
+    draw.text((x, y), emoji, font=font, embedded_color=True)
+    
+    # Convert PIL image to bytes
+    img_buffer = BytesIO()
+    img.save(img_buffer, format='PNG')
+    img_buffer.seek(0)
+    
+    # Create ReportLab image
+    rl_image = Image(img_buffer, width=emoji_size, height=emoji_size)
+    
+    # Wrap in a table to center it
+    table = Table([[rl_image]], colWidths=[6 * inch])
+    table.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (0, 0), 'CENTER'),
+        ('VALIGN', (0, 0), (0, 0), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (0, 0), 10),
+        ('BOTTOMPADDING', (0, 0), (0, 0), 10),
+    ]))
+    
+    return table
+
+
+def _draw_focus_gauge(focus_pct: float) -> Drawing:
+    """
+    Create a semicircular gauge visualization for focus percentage.
+    
+    The gauge has 4 colored zones (no labels - legend is separate):
+    - 0-49%: Very Poor (red)
+    - 50-75%: Poor (orange)
+    - 75-90%: Satisfactory (yellow)
+    - 90-100%: Great (green)
+    
+    The drawing's bottom edge aligns with the semicircle's flat base.
+    
+    Args:
+        focus_pct: Focus percentage (0-100)
+        
+    Returns:
+        ReportLab Drawing object containing the gauge
+    """
+    from reportlab.graphics.shapes import Circle
+    
+    # Scale factor - slightly bigger (0.9 = 90% of original size)
+    scale = 0.9
+    
+    # Gauge dimensions
+    outer_radius = int(100 * scale)
+    inner_radius = int(50 * scale)  # Slightly thicker gauge band
+    width = int(250 * scale)  # Width to fit the gauge
+    height = outer_radius  # Height = radius, so flat base is at y=0
+    center_x = width / 2
+    center_y = 0  # Center at bottom - semicircle goes UP from here
+    
+    drawing = Drawing(width, height)
+    
+    # Zone definitions: (start_pct, end_pct, color)
+    zones = [
+        (0, 49, colors.HexColor('#B71C1C')),      # Deep red
+        (49, 75, colors.HexColor('#F57C00')),     # Orange
+        (75, 90, colors.HexColor('#FFCA28')),     # Yellow
+        (90, 100, colors.HexColor('#2E7D32')),    # Green
+    ]
+    
+    # Draw each zone as a wedge (arc segment)
+    for start_pct, end_pct, color in zones:
+        # Convert percentage to angle (180° = 0%, 0° = 100%)
+        start_angle = 180 - (end_pct * 1.8)
+        end_angle = 180 - (start_pct * 1.8)
+        
+        # Draw outer wedge
+        wedge = Wedge(
+            center_x, center_y,
+            outer_radius,
+            start_angle, end_angle,
+            fillColor=color,
+            strokeColor=colors.white,
+            strokeWidth=int(2 * scale)
+        )
+        drawing.add(wedge)
+        
+        # Draw inner wedge (to create hollow arc effect)
+        inner_wedge = Wedge(
+            center_x, center_y,
+            inner_radius,
+            start_angle, end_angle,
+            fillColor=colors.white,
+            strokeColor=None,
+            strokeWidth=0
+        )
+        drawing.add(inner_wedge)
+    
+    # Draw the needle
+    needle_angle = 180 - (focus_pct * 1.8)
+    needle_angle_rad = math.radians(needle_angle)
+    needle_length = inner_radius + int(20 * scale)
+    
+    # Needle tip
+    tip_x = center_x + needle_length * math.cos(needle_angle_rad)
+    tip_y = center_y + needle_length * math.sin(needle_angle_rad)
+    
+    # Needle base (small triangle for visibility)
+    base_offset = int(6 * scale)
+    base_angle_left = math.radians(needle_angle + 90)
+    base_angle_right = math.radians(needle_angle - 90)
+    
+    base_left_x = center_x + base_offset * math.cos(base_angle_left)
+    base_left_y = center_y + base_offset * math.sin(base_angle_left)
+    base_right_x = center_x + base_offset * math.cos(base_angle_right)
+    base_right_y = center_y + base_offset * math.sin(base_angle_right)
+    
+    needle = Polygon(
+        [tip_x, tip_y, base_left_x, base_left_y, base_right_x, base_right_y],
+        fillColor=colors.HexColor('#2C3E50'),
+        strokeColor=colors.HexColor('#1A252F'),
+        strokeWidth=1
+    )
+    drawing.add(needle)
+    
+    # Draw center circle (needle pivot)
+    center_circle = Circle(
+        center_x, center_y, int(8 * scale),
+        fillColor=colors.HexColor('#2C3E50'),
+        strokeColor=colors.white,
+        strokeWidth=int(2 * scale)
+    )
+    drawing.add(center_circle)
+    
+    return drawing
+
+
+def _create_focus_legend_table() -> Table:
+    """
+    Create a legend table showing the focus level zones with colors, percentages and labels.
+    Sized to match the gauge proportionally.
+    
+    Returns:
+        ReportLab Table object containing the legend
+    """
+    # Zone definitions: (range_text, label, color)
+    zones = [
+        ('90-100%', 'Great', colors.HexColor('#2E7D32')),
+        ('75-89%', 'Satisfactory', colors.HexColor('#FFCA28')),
+        ('50-74%', 'Poor', colors.HexColor('#F57C00')),
+        ('0-49%', 'Very Poor', colors.HexColor('#B71C1C')),
+    ]
+    
+    # Build legend table data
+    legend_data = []
+    for range_text, label, color in zones:
+        # Create a small colored box using a mini-table (slightly bigger)
+        color_cell = Table([['']], colWidths=[14], rowHeights=[14])
+        color_cell.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, 0), color),
+            ('BOX', (0, 0), (0, 0), 0.5, colors.HexColor('#333333')),
+        ]))
+        legend_data.append([color_cell, range_text, label])
+    
+    # Create the legend table (slightly bigger)
+    legend_table = Table(legend_data, colWidths=[0.3 * inch, 0.8 * inch, 0.95 * inch])
+    
+    # Build table style with color-coded text
+    legend_style = [
+        ('ALIGN', (0, 0), (0, -1), 'CENTER'),
+        ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+        ('ALIGN', (2, 0), (2, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('FONTNAME', (1, 0), (1, -1), 'Times-Bold'),
+        ('FONTNAME', (2, 0), (2, -1), 'Times-Roman'),
+        ('FONTSIZE', (1, 0), (-1, -1), 10),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('LEFTPADDING', (1, 0), (1, -1), 8),
+        ('LEFTPADDING', (2, 0), (2, -1), 4),
+        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#E0E6ED')),
+        ('LINEBELOW', (0, 0), (-1, -2), 0.5, colors.HexColor('#E0E6ED')),
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F8FAFB')),
+    ]
+    
+    # Add color coding for percentage column
+    zone_colors = [
+        colors.HexColor('#2E7D32'),  # Great - green
+        colors.HexColor('#FFCA28'),  # Satisfactory - yellow
+        colors.HexColor('#F57C00'),  # Poor - orange
+        colors.HexColor('#B71C1C'),  # Very Poor - red
+    ]
+    for i, color in enumerate(zone_colors):
+        legend_style.append(('TEXTCOLOR', (1, i), (1, i), color))
+    
+    legend_table.setStyle(TableStyle(legend_style))
+    
+    return legend_table
+
+
+def _create_gauge_with_legend(focus_pct: float) -> Table:
+    """
+    Create a centered table containing the focus gauge and its legend side by side.
+    The flat base of the gauge semicircle aligns with the bottom of the legend table.
+    
+    Args:
+        focus_pct: Focus percentage (0-100)
+        
+    Returns:
+        ReportLab Table object with gauge and legend
+    """
+    gauge = _draw_focus_gauge(focus_pct)
+    legend = _create_focus_legend_table()
+    
+    # Create table with gauge on left, spacer, legend on right
+    data = [[gauge, '', legend]]
+    
+    # Table with appropriate column widths (gauge, gap, legend)
+    table = Table(data, colWidths=[2.8 * inch, 0.5 * inch, 2.1 * inch])
+    table.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),  # Align at bottom - gauge base matches legend bottom
+    ]))
+    
+    return table
 
 
 def generate_report(
@@ -327,6 +816,22 @@ def generate_report(
     stats_table.setStyle(TableStyle(table_style))
     
     story.append(stats_table)
+    
+    # Add focus gauge visualization with legend below the statistics table
+    # Extra spacer to position the entire focus component (gauge, legend, statement, emoji) lower
+    story.append(Spacer(1, 1.1 * inch))
+    gauge_with_legend = _create_gauge_with_legend(focus_pct)
+    story.append(gauge_with_legend)
+    
+    # Add focus feedback statement with colored category word
+    story.append(Spacer(1, 0.3 * inch))
+    focus_statement = _create_focus_statement_paragraph(focus_pct)
+    story.append(focus_statement)
+    
+    # Add focus emoji below the statement (only if emoji font is available)
+    focus_emoji = _create_focus_emoji_image(focus_pct)
+    if focus_emoji:
+        story.append(focus_emoji)
     
     # ===== PAGE 2+: Session Logs =====
     
