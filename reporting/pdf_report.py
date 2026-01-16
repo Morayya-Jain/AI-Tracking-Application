@@ -938,14 +938,14 @@ def generate_report(
         ('FONTSIZE', (0, 0), (-1, 0), 13),
         ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
         ('TOPPADDING', (0, 0), (-1, 0), 12),
-        # Data rows (regular)
+        # Data rows - background applied BEFORE header to ensure proper layering
         ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#F8FAFB')),
         ('FONTNAME', (0, 1), (0, -1), 'Times-Roman'),
         ('FONTNAME', (1, 1), (1, -1), 'Times-Roman'),
         ('FONTSIZE', (0, 1), (-1, -1), 11),
         ('TOPPADDING', (0, 1), (-1, -1), 10),
         ('BOTTOMPADDING', (0, 1), (-1, -1), 10),
-        ('LINEBELOW', (0, 0), (-1, 0), 2, colors.HexColor('#4A90E2')),
+        # Remove the LINEBELOW under header - it can cause pixel bleeding
         ('LINEBELOW', (0, 1), (-1, -2), 0.5, colors.HexColor('#E0E6ED')),
         ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#2C3E50')),
     ]
@@ -1021,7 +1021,7 @@ def generate_report(
                 ('FONTSIZE', (0, 1), (-1, -1), 10),
                 ('TOPPADDING', (0, 1), (-1, -1), 10),
                 ('BOTTOMPADDING', (0, 1), (-1, -1), 10),
-                ('LINEBELOW', (0, 0), (-1, 0), 2, colors.HexColor('#4A90E2')),
+                # Remove LINEBELOW under header - can cause pixel bleeding
                 ('LINEBELOW', (0, 1), (-1, -2), 0.5, colors.HexColor('#E0E6ED')),
                 ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#2C3E50')),
             ]
