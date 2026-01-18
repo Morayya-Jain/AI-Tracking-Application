@@ -27,6 +27,7 @@ from camera import get_event_type
 from tracking.session import Session
 from tracking.analytics import compute_statistics
 from reporting.pdf_report import generate_report
+from instance_lock import check_single_instance, get_existing_pid
 
 logger = logging.getLogger(__name__)
 
@@ -1392,6 +1393,23 @@ def main():
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("openai").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
+    
+    # Check for existing instance (single instance enforcement)
+    if not check_single_instance():
+        existing_pid = get_existing_pid()
+        pid_info = f" (PID: {existing_pid})" if existing_pid else ""
+        
+        # Show error dialog
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror(
+            "Gavin AI Already Running",
+            f"Another instance of Gavin AI is already running{pid_info}.\n\n"
+            "Only one instance can run at a time.\n"
+            "Please close the other instance first."
+        )
+        root.destroy()
+        sys.exit(1)
     
     # Check for API key early
     if not config.OPENAI_API_KEY:

@@ -22,6 +22,7 @@ from datetime import datetime
 from typing import Optional
 
 import config
+from instance_lock import check_single_instance, get_existing_pid
 from camera.capture import CameraCapture
 from camera.vision_detector import VisionDetector
 from tracking.session import Session
@@ -324,6 +325,36 @@ Examples:
     )
     
     args = parser.parse_args()
+    
+    # Check for existing instance (single instance enforcement)
+    if not check_single_instance():
+        existing_pid = get_existing_pid()
+        pid_info = f" (PID: {existing_pid})" if existing_pid else ""
+        
+        if args.cli:
+            print("\n❌ Gavin AI is already running" + pid_info)
+            print("   Only one instance can run at a time.")
+            print("   Please close the other instance first.\n")
+        else:
+            # For GUI mode, show a dialog
+            try:
+                import tkinter as tk
+                from tkinter import messagebox
+                root = tk.Tk()
+                root.withdraw()  # Hide the main window
+                messagebox.showerror(
+                    "Gavin AI Already Running",
+                    f"Another instance of Gavin AI is already running{pid_info}.\n\n"
+                    "Only one instance can run at a time.\n"
+                    "Please close the other instance first."
+                )
+                root.destroy()
+            except Exception:
+                # Fallback to console if tkinter fails
+                print("\n❌ Gavin AI is already running" + pid_info)
+                print("   Only one instance can run at a time.\n")
+        
+        sys.exit(1)
     
     # CLI mode if explicitly requested
     if args.cli:

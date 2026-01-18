@@ -38,6 +38,7 @@ ENV/
 # Generated files
 data/sessions
 data/.privacy_accepted
+data/.gavin_instance.lock
 reports/
 *.log
 

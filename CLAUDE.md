@@ -10,6 +10,7 @@
 |------|---------|
 | `main.py` | Entry point, camera loop |
 | `config.py` | **ALL constants** (models, FPS, thresholds) |
+| `instance_lock.py` | **Single-instance enforcement** (cross-platform file lock) |
 | `camera/vision_detector.py` | Main detection logic (`analyze_frame()`) |
 | `tracking/analytics.py` | **Stats computation - MATH MUST ADD UP** |
 | `tracking/session.py` | Event logging, state changes |
@@ -93,6 +94,7 @@ Uses custom sound file: `data/gavin alert sound.mp3` (cross-platform: afplay on 
 - ❌ Increase API frequency (cost)
 - ❌ Decimal minutes
 - ❌ Stats that don't sum
+- ❌ Run multiple instances (single-instance enforced via file lock)
 
 ---
 
@@ -141,3 +143,14 @@ python3 -m unittest tests.test_session tests.test_analytics
 
 - `data/focus_statements.json` - **REQUIRED** - Contains feedback message templates for PDF reports
 - `data/.privacy_accepted` - User-specific flag, gitignored
+- `data/.gavin_instance.lock` - Instance lock file (auto-managed, gitignored)
+
+---
+
+## 🔒 Single Instance Lock
+
+Only one instance of Gavin AI can run at a time. Implemented via cross-platform file locking:
+- **macOS/Linux**: `fcntl.flock()` - kernel-level lock, auto-released on crash
+- **Windows**: `msvcrt.locking()` - same behavior
+
+Lock file: `data/.gavin_instance.lock` - automatically cleaned up on exit.
