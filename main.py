@@ -260,13 +260,13 @@ class GavinAI:
         total_min = stats["total_minutes"]
         focused_min = stats["focused_minutes"]
         away_min = stats["away_minutes"]
-        phone_min = stats["phone_minutes"]
+        gadget_min = stats["gadget_minutes"]
         focus_pct = (focused_min / total_min * 100) if total_min > 0 else 0
         
         print(f"\n⏱️  Total Duration: {total_min:.1f} minutes")
         print(f"🎯 Focused Time: {focused_min:.1f} minutes ({focus_pct:.1f}%)")
         print(f"🚶 Away Time: {away_min:.1f} minutes")
-        print(f"📱 Phone Usage: {phone_min:.1f} minutes")
+        print(f"⚡ Gadget Usage: {gadget_min:.1f} minutes")
 
 
 def main_cli():

@@ -16,16 +16,16 @@ def compute_statistics(events: List[Dict[str, Any]], total_duration: float) -> D
     Returns:
         Dictionary containing:
         - total_minutes: Total session duration
-        - focused_minutes: Time present minus phone time
+        - focused_minutes: Time present at desk
         - away_minutes: Time away from desk
-        - phone_minutes: Time suspected phone usage
+        - gadget_minutes: Time using other gadgets (phone, tablet, controller, etc.)
         - present_minutes: Time present at desk
         - events: Consolidated event timeline
     """
     # Initialize counters
     present_seconds = 0.0
     away_seconds = 0.0
-    phone_seconds = 0.0
+    gadget_seconds = 0.0
     
     # Sum up durations by event type
     for event in events:
@@ -36,17 +36,17 @@ def compute_statistics(events: List[Dict[str, Any]], total_duration: float) -> D
             present_seconds += duration
         elif event_type == config.EVENT_AWAY:
             away_seconds += duration
-        elif event_type == config.EVENT_PHONE_SUSPECTED:
-            phone_seconds += duration
+        elif event_type == config.EVENT_GADGET_SUSPECTED:
+            gadget_seconds += duration
     
     # Convert to minutes for readability
     total_minutes = total_duration / 60
     present_minutes = present_seconds / 60
     away_minutes = away_seconds / 60
-    phone_minutes = phone_seconds / 60
+    gadget_minutes = gadget_seconds / 60
     
-    # Focused time = present time (phone is tracked separately, not subtracted)
-    # Total should equal: present + away + phone
+    # Focused time = present time (gadget is tracked separately, not subtracted)
+    # Total should equal: present + away + gadget
     focused_minutes = present_minutes
     
     # Consolidate events for timeline
@@ -56,7 +56,7 @@ def compute_statistics(events: List[Dict[str, Any]], total_duration: float) -> D
         "total_minutes": round(total_minutes, 2),
         "focused_minutes": round(focused_minutes, 2),
         "away_minutes": round(away_minutes, 2),
-        "phone_minutes": round(phone_minutes, 2),
+        "gadget_minutes": round(gadget_minutes, 2),
         "present_minutes": round(present_minutes, 2),
         "events": consolidated
     }
@@ -129,7 +129,7 @@ def _format_event(event: Dict[str, Any]) -> Dict[str, Any]:
     type_labels = {
         config.EVENT_PRESENT: "Focused",
         config.EVENT_AWAY: "Away",
-        config.EVENT_PHONE_SUSPECTED: "Phone Usage"
+        config.EVENT_GADGET_SUSPECTED: "Gadget Usage"
     }
     
     return {
@@ -174,7 +174,7 @@ def generate_summary_text(stats: Dict[str, Any]) -> str:
     total = stats["total_minutes"]
     focused = stats["focused_minutes"]
     away = stats["away_minutes"]
-    phone = stats["phone_minutes"]
+    gadget = stats["gadget_minutes"]
     focus_pct = get_focus_percentage(stats)
     
     # Convert minutes to hours/minutes format
@@ -190,7 +190,7 @@ def generate_summary_text(stats: Dict[str, Any]) -> str:
 Total Duration: {duration_str}
 Focused Time: {focused:.1f} minutes ({focus_pct}%)
 Away Time: {away:.1f} minutes
-Phone Usage: {phone:.1f} minutes
+Gadget Usage: {gadget:.1f} minutes
 
 """
     

@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """
-Test script to verify the phone detection fix.
+Test script to verify the gadget detection functionality.
 
 This script helps you test that the system correctly distinguishes between:
-1. Active phone usage (should detect)
-2. Passive phone presence (should NOT detect)
+1. Active gadget usage (should detect)
+2. Passive gadget presence (should NOT detect)
+
+Gadgets include: phones, tablets, game controllers, Nintendo Switch, TV, etc.
 """
 
 import sys
@@ -14,7 +16,7 @@ import cv2
 import time
 
 # Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from camera.vision_detector import VisionDetector
 from dotenv import load_dotenv
@@ -24,7 +26,7 @@ import config
 load_dotenv()
 
 print("═══════════════════════════════════════════════════════")
-print("🧪 Phone Detection Test - Active Usage Only")
+print("🧪 Gadget Detection Test - Active Usage Only")
 print("═══════════════════════════════════════════════════════\n")
 
 # Check API key
@@ -60,16 +62,16 @@ print("📋 Test Scenarios")
 print("═══════════════════════════════════════════════════════")
 print("\nTest each scenario for 5-10 seconds:\n")
 print("1. 📱 Phone on desk + looking at computer")
-print("   Expected: phone_visible = FALSE\n")
-print("2. 📱 Phone on desk + looking DOWN at it + screen ON")
-print("   Expected: phone_visible = TRUE\n")
-print("3. 📱 Phone in hands + looking at it + screen ON")
-print("   Expected: phone_visible = TRUE\n")
-print("4. 📱 Phone anywhere + screen OFF")
-print("   Expected: phone_visible = FALSE\n")
-print("5. 📱 Phone in hands + looking away")
-print("   Expected: phone_visible = FALSE\n")
-print("KEY: Position doesn't matter - it's attention + screen state!")
+print("   Expected: gadget_visible = FALSE\n")
+print("2. 📱 Phone/tablet in hands + looking at it + screen ON")
+print("   Expected: gadget_visible = TRUE (type: phone/tablet)\n")
+print("3. 🎮 Game controller in hands + playing")
+print("   Expected: gadget_visible = TRUE (type: controller)\n")
+print("4. 📺 Looking at TV instead of work")
+print("   Expected: gadget_visible = TRUE (type: tv)\n")
+print("5. 🎮 Controller on desk, not being held")
+print("   Expected: gadget_visible = FALSE\n")
+print("KEY: Position doesn't matter - it's attention + active usage!")
 print("═══════════════════════════════════════════════════════")
 print("\nPress Ctrl+C to stop testing\n")
 
@@ -85,7 +87,7 @@ try:
             break
         
         # Show camera feed
-        cv2.imshow("Phone Detection Test - Press ESC to quit", frame)
+        cv2.imshow("Gadget Detection Test - Press ESC to quit", frame)
         
         # Test detection every N seconds
         current_time = time.time()
@@ -98,22 +100,22 @@ try:
                 
                 # Print results
                 print("─" * 55)
-                print(f"  Person Present:   {result['person_present']}")
-                print(f"  Phone Visible:    {result['phone_visible']}")
-                print(f"  Phone Confidence: {result['phone_confidence']:.2f}")
-                print(f"  Distraction Type: {result['distraction_type']}")
-                print(f"  Description:      {result['description']}")
+                print(f"  Person Present:    {result['person_present']}")
+                print(f"  Gadget Visible:    {result['gadget_visible']}")
+                print(f"  Gadget Confidence: {result['gadget_confidence']:.2f}")
+                print(f"  Distraction Type:  {result['distraction_type']}")
+                print(f"  Description:       {result['description']}")
                 print("─" * 55)
                 
                 # Interpretation
-                if result['phone_visible']:
-                    print("  ✅ DETECTED: Active phone usage")
-                    if result['phone_confidence'] > 0.7:
-                        print("  💪 High confidence - clear phone usage")
+                if result['gadget_visible']:
+                    print(f"  ✅ DETECTED: Active {result['distraction_type']} usage")
+                    if result['gadget_confidence'] > 0.7:
+                        print("  💪 High confidence - clear gadget usage")
                     else:
-                        print("  ⚠️  Moderate confidence - possible phone usage")
+                        print("  ⚠️  Moderate confidence - possible gadget usage")
                 else:
-                    print("  ✓ NO DETECTION: Not actively using phone")
+                    print("  ✓ NO DETECTION: Not actively using any gadget")
                 
             except Exception as e:
                 print(f"  ❌ Error during detection: {e}")
@@ -139,12 +141,12 @@ finally:
     print("Test completed")
     print("═══════════════════════════════════════════════════════")
     print("\n✅ If the detection worked correctly:")
-    print("   - Phone on desk + looking at computer: phone_visible = False")
-    print("   - Phone on desk + looking at it + screen ON: phone_visible = True")
-    print("   - Position doesn't matter - it's attention + screen state!")
+    print("   - Gadget on desk + looking at computer: gadget_visible = False")
+    print("   - Gadget in use + looking at it: gadget_visible = True")
+    print("   - Position doesn't matter - it's attention + active engagement!")
     print("\n❌ If detection wasn't accurate:")
-    print("   - Try adjusting PHONE_CONFIDENCE_THRESHOLD in config.py")
+    print("   - Try adjusting GADGET_CONFIDENCE_THRESHOLD in config.py")
     print("   - Ensure good lighting for better AI vision")
-    print("   - Make attention clear (look directly at phone or away)")
-    print("   - Ensure phone screen brightness is visible to camera")
+    print("   - Make attention clear (look directly at gadget or away)")
+    print("   - Ensure device screen brightness is visible to camera")
     print()

@@ -45,7 +45,7 @@ class TestAnalytics(unittest.TestCase):
                 "duration_seconds": 900  # 15 minutes
             },
             {
-                "type": config.EVENT_PHONE_SUSPECTED,
+                "type": config.EVENT_GADGET_SUSPECTED,
                 "start": (base_time + timedelta(minutes=50)).isoformat(),
                 "end": (base_time + timedelta(minutes=55)).isoformat(),
                 "duration_seconds": 300  # 5 minutes
@@ -61,8 +61,8 @@ class TestAnalytics(unittest.TestCase):
         # Total: 60 minutes
         # Present: 30 + 15 + 5 = 50 minutes
         # Away: 5 minutes
-        # Phone: 5 minutes
-        # Focused: 50 - 5 = 45 minutes
+        # Gadget: 5 minutes
+        # Focused: 50 minutes (gadget tracked separately)
         self.total_duration = 3600  # 60 minutes in seconds
     
     def test_compute_statistics_basic(self):
@@ -72,8 +72,8 @@ class TestAnalytics(unittest.TestCase):
         self.assertEqual(stats["total_minutes"], 60.0)
         self.assertEqual(stats["present_minutes"], 50.0)
         self.assertEqual(stats["away_minutes"], 5.0)
-        self.assertEqual(stats["phone_minutes"], 5.0)
-        self.assertEqual(stats["focused_minutes"], 45.0)
+        self.assertEqual(stats["gadget_minutes"], 5.0)
+        self.assertEqual(stats["focused_minutes"], 50.0)
     
     def test_compute_statistics_empty_events(self):
         """Test statistics with no events."""
@@ -82,7 +82,7 @@ class TestAnalytics(unittest.TestCase):
         self.assertEqual(stats["total_minutes"], 60.0)
         self.assertEqual(stats["focused_minutes"], 0.0)
         self.assertEqual(stats["away_minutes"], 0.0)
-        self.assertEqual(stats["phone_minutes"], 0.0)
+        self.assertEqual(stats["gadget_minutes"], 0.0)
     
     def test_consolidate_events(self):
         """Test event consolidation."""
@@ -143,8 +143,8 @@ class TestAnalytics(unittest.TestCase):
         stats = compute_statistics(self.sample_events, self.total_duration)
         focus_pct = get_focus_percentage(stats)
         
-        # 45 minutes focused out of 60 total = 75%
-        self.assertEqual(focus_pct, 75.0)
+        # 50 minutes focused out of 60 total = 83.3%
+        self.assertEqual(focus_pct, 83.3)
     
     def test_get_focus_percentage_zero_duration(self):
         """Test focus percentage with zero duration."""

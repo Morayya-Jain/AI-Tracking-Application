@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Gavin AI is an AI-powered study focus tracking application that monitors students via webcam, detects distractions (especially phone usage), and generates detailed PDF reports with AI-generated insights.
+Gavin AI is an AI-powered study focus tracking application that monitors students via webcam, detects distractions (gadgets like phones, tablets, game controllers, etc.), and generates detailed PDF reports with AI-generated insights.
 
 **Tech Stack:**
 - Python 3.9+
@@ -15,7 +15,7 @@ Gavin AI is an AI-powered study focus tracking application that monitors student
 **Key Architecture:**
 - Real-time detection using OpenAI Vision API (1 FPS)
 - Session-based tracking with JSON persistence
-- Event logging (present, away, phone_suspected)
+- Event logging (present, away, gadget_suspected)
 - AI-generated insights and suggestions
 
 ## Code Standards
@@ -68,15 +68,15 @@ Reports are saved to: ~/Downloads/
 ### 1. AI-Powered Detection (Primary System)
 - **ALL detection uses OpenAI Vision API** (no hardcoded methods)
 - Send camera frames to OpenAI every second (configurable via DETECTION_FPS)
-- Vision API returns: person_present, at_desk, phone_visible (ACTIVE usage only), distraction_type
+- Vision API returns: person_present, at_desk, gadget_visible (ACTIVE usage only), distraction_type
 - **Distance-aware presence detection**:
   - `person_present`: True if any body part visible (even far away)
   - `at_desk`: True only if person is at working distance (face/upper body clearly visible)
   - Student roaming 10m away = person_present=true, at_desk=false = marked as "away"
-- **Phone detection is smart**: Detects based on attention + screen state (not position)
-  - Requires: Person looking at phone AND screen is ON
-  - Position irrelevant: Phone can be on desk or in hands
-- **Prevents false positives**: Phone on desk with person looking elsewhere = NOT detected
+- **Gadget detection is smart**: Detects phones, tablets, game controllers, Nintendo Switch, TV, etc.
+  - Requires: Person looking at gadget AND actively engaged with it
+  - Position irrelevant: Gadget can be on desk or in hands
+- **Prevents false positives**: Gadget on desk with person looking elsewhere = NOT detected
 - NO fallback methods - AI is the only detection method
 
 ### 2. Privacy & Data
@@ -89,7 +89,7 @@ Reports are saved to: ~/Downloads/
 Three event types tracked:
 - `present`: Person at desk (close to camera), focused
 - `away`: Person not visible OR visible but far from desk (roaming around room)
-- `phone_suspected`: Phone detected in frame
+- `gadget_suspected`: Gadget distraction detected (phone, tablet, controller, etc.)
 
 Events have: type, start time, end time, duration
 
@@ -108,8 +108,8 @@ OPENAI_VISION_MODEL = "gpt-4o-mini"  # Image analysis
 
 # Detection settings
 DETECTION_FPS = 1  # Frames per second to analyze
-PHONE_CONFIDENCE_THRESHOLD = 0.5  # Vision API confidence
-PHONE_DETECTION_DURATION_SECONDS = 2  # Sustained detection
+GADGET_CONFIDENCE_THRESHOLD = 0.5  # Vision API confidence
+GADGET_DETECTION_DURATION_SECONDS = 2  # Sustained detection
 
 # Paths
 DATA_DIR = BASE_DIR / "data" / "sessions"
@@ -143,7 +143,7 @@ REPORTS_DIR = BASE_DIR / "reports"
 
 ### tracking/analytics.py
 - Compute statistics from events
-- Math MUST add up: present + away + phone = total
+- Math MUST add up: present + away + gadget = total
 - Event consolidation (merge consecutive similar events)
 - Time formatting helpers
 
@@ -204,7 +204,7 @@ display_time = _format_time(minutes)
 ### What TO Do
 - ✅ Use OpenAI Vision API for all detection
 - ✅ Direct, factual AI tone
-- ✅ Ensure math always adds up (present + away + phone = total)
+- ✅ Ensure math always adds up (present + away + gadget = total)
 - ✅ Format times as "1m 30s" not "1.5 minutes"
 - ✅ Log important events to logger
 - ✅ Add docstrings to all functions
@@ -226,7 +226,7 @@ display_time = _format_time(minutes)
 2. Privacy notice appears on first launch
 3. Camera opens successfully
 4. Vision API detects person presence
-5. Vision API detects phone when visible
+5. Vision API detects gadgets when in use
 6. Status indicator updates in real-time
 7. Timer displays correctly
 8. Events logged correctly
@@ -286,10 +286,10 @@ python-dotenv>=1.0.0      # Environment variables
 **Solution:** Check JSON parsing in vision_detector.py, handle markdown code blocks
 
 ### Issue: "Statistics don't add up"
-**Solution:** Verify analytics.py: present + away + phone should equal total
+**Solution:** Verify analytics.py: present + away + gadget should equal total
 
-### Issue: "Phone not detected"
-**Solution:** Check Vision API logs, verify confidence threshold, ensure phone visible in frame
+### Issue: "Gadget not detected"
+**Solution:** Check Vision API logs, verify confidence threshold, ensure gadget visible and in active use
 
 ### Issue: "API key not found"
 **Solution:** Verify .env file exists with OPENAI_API_KEY=sk-...

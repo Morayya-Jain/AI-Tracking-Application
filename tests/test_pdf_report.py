@@ -25,11 +25,11 @@ def generate_random_stats() -> dict:
     # Generate random ratios and normalize
     present_ratio = random.uniform(0.3, 0.9)
     away_ratio = random.uniform(0, 0.3)
-    phone_ratio = 1 - present_ratio - away_ratio
+    gadget_ratio = 1 - present_ratio - away_ratio
     
-    # Ensure phone_ratio is non-negative
-    if phone_ratio < 0:
-        phone_ratio = 0
+    # Ensure gadget_ratio is non-negative
+    if gadget_ratio < 0:
+        gadget_ratio = 0
         # Renormalize
         total_ratio = present_ratio + away_ratio
         present_ratio /= total_ratio
@@ -37,7 +37,7 @@ def generate_random_stats() -> dict:
     
     present_minutes = total_minutes * present_ratio
     away_minutes = total_minutes * away_ratio
-    phone_minutes = total_minutes * phone_ratio
+    gadget_minutes = total_minutes * gadget_ratio
     
     # Generate random events
     events = _generate_random_events(total_minutes)
@@ -45,7 +45,7 @@ def generate_random_stats() -> dict:
     return {
         'present_minutes': present_minutes,
         'away_minutes': away_minutes,
-        'phone_minutes': phone_minutes,
+        'gadget_minutes': gadget_minutes,
         'total_minutes': total_minutes,
         'events': events
     }
@@ -65,7 +65,7 @@ def _generate_random_events(total_minutes: float) -> list:
     event_types = [
         ('present', 'Present at Desk'),
         ('away', 'Away from Desk'),
-        ('phone_suspected', 'Phone Usage')
+        ('gadget_suspected', 'Gadget Usage')
     ]
     
     # Start time for events
@@ -88,7 +88,7 @@ def _generate_random_events(total_minutes: float) -> list:
             duration = remaining_minutes
         
         # Random event type (weighted towards present)
-        weights = [0.6, 0.2, 0.2]  # present, away, phone
+        weights = [0.6, 0.2, 0.2]  # present, away, gadget
         event_type, type_label = random.choices(event_types, weights=weights)[0]
         
         start_time = current_time
@@ -172,12 +172,12 @@ def test_pdf_all_categories():
             total_minutes = 60  # 1 hour session
             present_minutes = total_minutes * focus_ratio
             away_minutes = total_minutes * (1 - focus_ratio) * 0.5
-            phone_minutes = total_minutes * (1 - focus_ratio) * 0.5
+            gadget_minutes = total_minutes * (1 - focus_ratio) * 0.5
             
             stats = {
                 'present_minutes': present_minutes,
                 'away_minutes': away_minutes,
-                'phone_minutes': phone_minutes,
+                'gadget_minutes': gadget_minutes,
                 'total_minutes': total_minutes,
                 'events': _generate_random_events(total_minutes)
             }

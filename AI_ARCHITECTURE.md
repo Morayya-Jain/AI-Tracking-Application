@@ -14,7 +14,7 @@ Gavin AI uses **OpenAI for EVERYTHING**:
 │  OpenAI Vision API (gpt-4o-mini)                   │
 │      ├→ Detects: Person present?                   │
 │      ├→ Detects: At desk (close to camera)?        │
-│      ├→ Detects: Phone visible?                    │
+│      ├→ Detects: Gadget in use?                    │
 │      ├→ Detects: Other distractions?               │
 │      └→ Returns: JSON detection results            │
 │      ↓                                              │
@@ -51,9 +51,9 @@ Returns:
 {
   "person_present": true/false,  # Is any body part visible?
   "at_desk": true/false,         # Is person at working distance? (not roaming far away)
-  "phone_visible": true/false,
-  "phone_confidence": 0.0-1.0,
-  "distraction_type": "phone" | "none" | other
+  "gadget_visible": true/false,
+  "gadget_confidence": 0.0-1.0,
+  "distraction_type": "phone" | "tablet" | "controller" | "tv" | "none"
 }
 ```
 
@@ -86,7 +86,7 @@ Returns:
 **Features:**
 - **Detailed Summary (4-5 sentences):** Overall session quality, behavior patterns, timing/context of distractions, what worked vs what didn't
 - **5 Specific Takeaways:** Data-driven recommendations based on actual session patterns, references specific times/events, concrete actionable strategies
-- **Pattern Recognition:** Identifies trends like "strong initial focus followed by phone distraction" or "frequent short breaks vs few long breaks"
+- **Pattern Recognition:** Identifies trends like "strong initial focus followed by gadget distraction" or "frequent short breaks vs few long breaks"
 - **Honest Assessment:** Direct analysis without generic encouragement
 
 **Cost:** ~$0.0005 per session (increased due to more detailed output)  
@@ -101,7 +101,7 @@ Returns:
 | Component | API Calls | Cost |
 |-----------|-----------|------|
 | Vision API (person detection) | 60/min | $0.06-0.12 |
-| Vision API (phone detection) | 60/min | (same frames) |
+| Vision API (gadget detection) | 60/min | (same frames) |
 | Text Summary | 1/session | $0.0003 |
 
 **Total:** ~$0.06-0.12 per minute + $0.0003 per session
@@ -133,7 +133,7 @@ OPENAI_VISION_MODEL = "gpt-4o-mini"
 # Line 21: How often to analyze frames
 VISION_DETECTION_INTERVAL = 1.0  # Every 1 second
 
-# Line 22: Phone confidence threshold
+# Line 22: Gadget confidence threshold
 PHONE_CONFIDENCE_THRESHOLD = 0.5  # 50% confidence
 ```
 
@@ -167,63 +167,63 @@ self.detection_cache_duration = 2.0  # Cache for 2 seconds instead of 1
    • Miss: Poor lighting
    • Miss: Partial occlusion
 
-❌ Shape-based phone detection
-   • Miss: Phone held at angle
-   • Miss: Phone partially visible
-   • Miss: Dark phones
-   • False positive: Books, tablets, papers
+❌ Shape-based gadget detection
+   • Miss: Device held at angle
+   • Miss: Device partially visible
+   • Miss: Dark screens
+   • False positive: Books, papers
 
 ❌ Behavioral heuristics
    • False positive: Looking at notes
    • False positive: Thinking
-   • Miss: Phone on desk
+   • Miss: Gadget on desk
 ```
 
 ### New System (AI-Powered):
 ```
 ✅ OpenAI Vision (GPT-4o-mini with vision)
    • Understands context
-   • Recognizes phones at any angle
+   • Recognizes all gadget types at any angle
    • Handles poor lighting
-   • Distinguishes phone from other objects
-   • Can detect other distractions
+   • Distinguishes gadgets from other objects
+   • Detects phones, tablets, controllers, TV, etc.
    • Extensible to new detection types
 ```
 
 ---
 
-## 🎯 Phone Detection: Active Usage Only
+## 🎯 Gadget Detection: Active Usage Only
 
 ### Important Distinction
 
-The system is designed to detect **active phone usage** based on two key factors:
+The system detects **active gadget usage** (phones, tablets, controllers, TV, etc.) based on two key factors:
 
 **Detection Criteria (BOTH required):**
-1. **Attention**: Person's eyes/gaze directed AT the phone
-2. **Screen State**: Phone screen is ON (showing light/colors)
+1. **Attention**: Person's eyes/gaze directed AT the gadget
+2. **Device State**: Gadget is actively being used (screen ON, controller held)
 
-**Position is IRRELEVANT** - phone can be anywhere!
+**Position is IRRELEVANT** - gadget can be anywhere!
 
 **✅ WILL Detect (Active Usage):**
-- Phone on desk + person looking down at it + screen ON
-- Phone in hands + person looking at screen + screen ON
-- Phone on lap + person looking at it + screen ON
-- Any scenario where attention + active screen are present
+- Phone/tablet in hands + person looking at screen + screen ON
+- Game controller in hands + person playing
+- Person looking at TV instead of work
+- Any scenario where attention + active engagement are present
 
 **❌ Will NOT Detect (Passive Presence):**
-- Phone on desk + person looking at computer/book
-- Phone anywhere + screen OFF or black
-- Phone face-down on any surface
-- Phone in pocket/bag
-- Phone visible but person's attention elsewhere
+- Gadget on desk + person looking at computer/book
+- Device screen OFF or black
+- Controller sitting on desk, not being held
+- Device in pocket/bag
+- Device visible but person's attention elsewhere
 
 ### Why This Matters
 
 **Problem Solved:**
-- People often have phones on their desks while working
-- A phone lying with screen off shouldn't count as a distraction
-- A phone on desk while user works on computer shouldn't count
-- Only active engagement (attention + screen) is a true distraction
+- People often have devices on their desks while working
+- A gadget lying inactive shouldn't count as a distraction
+- A device on desk while user works on computer shouldn't count
+- Only active engagement (attention + device active) is a true distraction
 
 **Key Insight:**
 - **Position doesn't matter** (desk vs. hands vs. lap)
@@ -231,10 +231,10 @@ The system is designed to detect **active phone usage** based on two key factors
 
 **Implementation:**
 The Vision API prompt explicitly instructs the AI to check:
-1. **Attention**: Is person's gaze directed at the phone? ✓
-2. **Screen state**: Is the screen ON and usable? ✓
+1. **Attention**: Is person's gaze directed at the gadget? ✓
+2. **Device state**: Is the device actively being used? ✓
 
-This dramatically reduces false positives and accurately tracks real phone distractions!
+This dramatically reduces false positives and accurately tracks real gadget distractions!
 
 ---
 
@@ -247,16 +247,17 @@ The Vision API analyzes each frame for:
    - Are they visible in frame?
    - Are they facing the camera?
 
-2. **Phone Usage**
-   - Is a smartphone/mobile phone being ACTIVELY USED?
-   - Is person's attention/gaze directed AT the phone?
-   - Is phone screen ON (showing light/colors)?
+2. **Gadget Usage**
+   - Is any gadget being ACTIVELY USED?
+   - Detects: phones, tablets, game controllers, Nintendo Switch, TV
+   - Is person's attention/gaze directed AT the gadget?
+   - Is the device active (screen ON, controller in use)?
    - Position doesn't matter (can be on desk or in hands)
    - What's the confidence level?
 
 3. **Distractions** (Extensible!)
-   - Other devices (tablet, second phone)
-   - Games
+   - All device types detected as gadgets
+   - Games (via controllers)
    - Social media on screen (if visible)
    - Eating/drinking
    - Talking to others
@@ -277,24 +278,25 @@ prompt = """Analyze this webcam frame for a focus tracking system.
 Return a JSON object with these fields:
 {
   "person_present": true/false,
-  "phone_visible": true/false (ONLY if actively being used),
-  "phone_confidence": 0.0-1.0,
-  "distraction_type": "phone" or "none" or other type,
+  "gadget_visible": true/false (ONLY if actively being used),
+  "gadget_confidence": 0.0-1.0,
+  "distraction_type": "phone" or "tablet" or "controller" or "tv" or "none",
   "description": "Brief description"
 }
 
-CRITICAL: Only detect phone_visible=true if BOTH conditions are met:
-1. Person's attention/gaze is directed AT the phone
-2. Phone screen is ON (showing light/colors)
+CRITICAL: Only detect gadget_visible=true if BOTH conditions are met:
+1. Person's attention/gaze is directed AT the gadget
+2. Gadget is actively being used (screen ON, controller in hands, etc.)
 
-Position doesn't matter - phone can be on desk, in hands, on lap, etc.
-What matters is: Is person looking at it? Is screen on?
+Position doesn't matter - gadget can be on desk, in hands, on lap, etc.
+What matters is: Is person looking at/engaged with it? Is device active?
 
 Examples:
-✓ Phone on desk + person looking down at it + screen glowing = DETECT
-✓ Phone in hands + person looking at screen + screen on = DETECT
+✓ Phone/tablet in hands + person looking at it + screen on = DETECT
+✓ Controller in hands + person playing = DETECT
+✓ Person watching TV instead of working = DETECT
 ✗ Phone on desk + person looking at computer = DO NOT DETECT
-✗ Phone anywhere + screen OFF/black = DO NOT DETECT
+✗ Controller on desk, not held = DO NOT DETECT
 """
 ```
 
@@ -305,12 +307,11 @@ prompt = """Analyze this webcam frame for a focus tracking system.
 Return a JSON object with these fields:
 {
   "person_present": true/false,
-  "phone_visible": true/false,
-  "phone_confidence": 0.0-1.0,
-  "tablet_visible": true/false,
+  "gadget_visible": true/false,
+  "gadget_confidence": 0.0-1.0,
   "eating_drinking": true/false,
   "talking_to_someone": true/false,
-  "distraction_type": "phone" or "tablet" or "eating" or "social" or "none",
+  "distraction_type": "phone" or "tablet" or "controller" or "tv" or "eating" or "social" or "none",
   "description": "Brief description"
 }
 """
@@ -348,8 +349,8 @@ response = client.chat.completions.create(
 result = json.loads(response.choices[0].message.content)
 
 # 5. Log events based on detection
-if result["phone_visible"]:
-    session.log_event("phone_suspected")
+if result["gadget_visible"]:
+    session.log_event("gadget_suspected")
 ```
 
 ---
@@ -458,12 +459,12 @@ Just add fields to the prompt and handle them in your code!
 # Modify vision_detector.py to accept lower confidence
 ```
 
-### "Phone not detected when holding it"
+### "Gadget not detected when using it"
 
 **Check:**
-- Is phone visible in camera frame?
-- Is phone screen facing camera?
-- Hold for 2+ seconds
+- Is gadget visible in camera frame?
+- Is device screen/controls facing camera?
+- Use for 2+ seconds
 
 **Adjust:**
 ```python
@@ -496,10 +497,10 @@ VISION_DETECTION_INTERVAL = 3.0
 ✓ Session started at 09:30 PM
 💡 Monitoring your focus session...
 
-INFO: 📱 Phone detected by AI! Confidence: 0.85
-📱 Phone usage detected (09:32 PM)
+INFO: ⚡ Gadget detected by AI! Type: phone, Confidence: 0.85
+⚡ On another gadget (09:32 PM)
 
-INFO: ✓ Phone no longer visible
+INFO: ✓ Gadget no longer in use
 ✓ Back at desk (09:33 PM)
 ```
 
@@ -512,7 +513,7 @@ INFO: ✓ Phone no longer visible
 📊 Session Summary
 ⏱️  Total Duration: 5m 30s
 🎯 Focused Time: 4m 15s (77.3%)
-📱 Phone Usage: 45s
+📺 Gadget Usage: 45s
 ```
 
 ---

@@ -9,7 +9,7 @@ class Session:
     """
     Manages a single focus session with event logging.
     
-    Tracks session lifecycle, logs events (present, away, phone_suspected),
+    Tracks session lifecycle, logs events (present, away, gadget_suspected),
     and provides JSON serialization for persistence.
     """
     
@@ -76,7 +76,7 @@ class Session:
         2. Starts tracking the new state
         
         Args:
-            event_type: Type of event (present, away, phone_suspected)
+            event_type: Type of event (present, away, gadget_suspected)
             timestamp: Optional timestamp. If None, uses current time.
         """
         if timestamp is None:
@@ -96,8 +96,8 @@ class Session:
                 print(f"⚠ Moved away from desk ({timestamp.strftime('%I:%M %p')})")
             elif event_type == config.EVENT_PRESENT:
                 print(f"✓ Back at desk ({timestamp.strftime('%I:%M %p')})")
-            elif event_type == config.EVENT_PHONE_SUSPECTED:
-                print(f"📱 Phone usage detected ({timestamp.strftime('%I:%M %p')})")
+            elif event_type == config.EVENT_GADGET_SUSPECTED:
+                print(f"⚡ On another gadget ({timestamp.strftime('%I:%M %p')})")
     
     def _finalize_current_state(self, end_time: Optional[datetime] = None) -> None:
         """

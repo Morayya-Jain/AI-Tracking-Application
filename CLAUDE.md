@@ -1,6 +1,6 @@
 # Gavin AI - Agent Quick Reference
 
-**TL;DR**: Python focus tracker using OpenAI Vision API (1 FPS) to detect present/away/phone. Generates PDF reports. AI-only detection, no hardcoded methods.
+**TL;DR**: Python focus tracker using OpenAI Vision API (1 FPS) to detect present/away/gadget distractions. Generates PDF reports. AI-only detection, no hardcoded methods.
 
 ---
 
@@ -22,7 +22,7 @@
 ## ⚠️ Critical Rules
 
 **#1 - Math Must Add Up**  
-`present + away + phone = total` in `analytics.py`. This broke twice. Always verify.
+`present + away + gadget = total` in `analytics.py`. This broke twice. Always verify.
 
 **#2 - AI-Only Detection**  
 NO hardcoded detection. OpenAI Vision API only. Cost: ~$0.06-0.12/min (intentional).
@@ -39,7 +39,7 @@ Single combined PDF: Page 1 = Summary Statistics table. Page 2+ = All session lo
 
 - `present`: At desk, focused
 - `away`: Not visible
-- `phone_suspected`: Actively using phone (screen ON + attention, not just visible)
+- `gadget_suspected`: Actively using gadget (phone, tablet, controller, TV, etc.)
 
 ---
 
@@ -47,8 +47,8 @@ Single combined PDF: Page 1 = Summary Statistics table. Page 2+ = All session lo
 
 ```python
 DETECTION_FPS = 1                       # Don't increase (cost doubles)
-PHONE_CONFIDENCE_THRESHOLD = 0.5
-PHONE_DETECTION_DURATION_SECONDS = 2
+GADGET_CONFIDENCE_THRESHOLD = 0.5
+GADGET_DETECTION_DURATION_SECONDS = 2
 OPENAI_VISION_MODEL = "gpt-4o-mini"    # Detection
 UNFOCUSED_ALERT_TIMES = [20, 60, 120]   # Alerts at 20s, 60s, 120s unfocused
 ```
@@ -57,7 +57,7 @@ UNFOCUSED_ALERT_TIMES = [20, 60, 120]   # Alerts at 20s, 60s, 120s unfocused
 
 ## 🔔 Unfocused Alert System
 
-When user is unfocused (away or phone), audio alerts play:
+When user is unfocused (away or on gadget), audio alerts play:
 - **1st alert**: After 20 seconds
 - **2nd alert**: After 60 seconds
 - **3rd alert**: After 120 seconds
@@ -72,8 +72,8 @@ Uses custom sound file: `data/gavin alert sound.mp3` (cross-platform: afplay on 
 | Issue | Fix |
 |-------|-----|
 | "Vision API Error: Expecting value" | JSON parsing failed. Check markdown wrapping in `vision_detector.py` |
-| "Statistics don't add up" | Verify `present + away + phone = total` in `analytics.py` |
-| "Phone not detected" | Screen ON? Person looking at it? Check Vision API logs. Threshold? |
+| "Statistics don't add up" | Verify `present + away + gadget = total` in `analytics.py` |
+| "Gadget not detected" | Actively in use? Person looking at it? Check Vision API logs. Threshold? |
 | "Credits not decreasing" | Vision API not called. Check HTTP POST logs |
 
 ---

@@ -12,17 +12,17 @@ BASE_DIR = Path(__file__).parent
 
 # OpenAI Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_VISION_MODEL = "gpt-4o-mini"  # For image analysis (person/phone detection)
+OPENAI_VISION_MODEL = "gpt-4o-mini"  # For image analysis (person/gadget detection)
 
 # Vision API settings
 VISION_DETECTION_INTERVAL = 1.0  # Analyze frames every N seconds (to save costs)
-PHONE_CONFIDENCE_THRESHOLD = 0.5  # Confidence threshold for phone detection
+GADGET_CONFIDENCE_THRESHOLD = 0.5  # Confidence threshold for gadget detection
 
 # Detection thresholds
 FACE_DETECTION_CONFIDENCE = 0.5
 AWAY_GRACE_PERIOD_SECONDS = 3  # How long before marking as "away"
-PHONE_DETECTION_ANGLE_THRESHOLD = 25  # degrees (head tilt down) - Legacy, still used in scoring
-PHONE_DETECTION_DURATION_SECONDS = 3  # How long distraction must persist
+GADGET_DETECTION_ANGLE_THRESHOLD = 25  # degrees (head tilt down) - Legacy, still used in scoring
+GADGET_DETECTION_DURATION_SECONDS = 3  # How long distraction must persist
 DISTRACTION_SCORE_THRESHOLD = 35  # Score 0-100, >35 = distracted (more sensitive!)
 STATE_CHANGE_DEBOUNCE_SECONDS = 3  # Prevent rapid state changes
 
@@ -55,7 +55,7 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 # Event types
 EVENT_PRESENT = "present"
 EVENT_AWAY = "away"
-EVENT_PHONE_SUSPECTED = "phone_suspected"
+EVENT_GADGET_SUSPECTED = "gadget_suspected"
 
 # Unfocused alert settings
 # Alert plays at each of these thresholds (in seconds) when user is unfocused

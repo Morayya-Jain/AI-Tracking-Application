@@ -925,9 +925,9 @@ def generate_report(
         stats_data.append(['Away from Desk', _format_time(stats['away_minutes'])])
         row_types.append('away')
     
-    if stats['phone_minutes'] > 0:
-        stats_data.append(['Phone Usage', _format_time(stats['phone_minutes'])])
-        row_types.append('phone')
+    if stats['gadget_minutes'] > 0:
+        stats_data.append(['Gadget Usage', _format_time(stats['gadget_minutes'])])
+        row_types.append('gadget')
     
     # Always add Total Time and Focus Rate
     stats_data.append(['Total Time', _format_time(stats['total_minutes'])])
@@ -963,7 +963,7 @@ def generate_report(
     for i, row_type in enumerate(row_types, 1):  # Start at 1 to skip header
         if row_type == 'present':
             table_style.append(('TEXTCOLOR', (0, i), (0, i), colors.HexColor('#1B7A3D')))
-        elif row_type in ['away', 'phone']:
+        elif row_type in ['away', 'gadget']:
             table_style.append(('TEXTCOLOR', (0, i), (0, i), colors.HexColor('#C62828')))
         elif row_type in ['total', 'focus']:
             # Make Total Time and Focus Rate bold in both columns
@@ -1040,7 +1040,7 @@ def generate_report(
                 event_type = event.get('type', '')
                 if event_type == 'present':
                     logs_table_style.append(('TEXTCOLOR', (1, i), (1, i), colors.HexColor('#1B7A3D')))
-                elif event_type in ['away', 'phone_suspected']:
+                elif event_type in ['away', 'gadget_suspected']:
                     logs_table_style.append(('TEXTCOLOR', (1, i), (1, i), colors.HexColor('#C62828')))
             
             timeline_table.setStyle(TableStyle(logs_table_style))

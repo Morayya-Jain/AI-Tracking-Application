@@ -20,10 +20,10 @@ def get_event_type(detection_state: dict) -> str:
         detection_state: Dictionary with detection results
             - present: Person is visible in frame
             - at_desk: Person is at working distance
-            - phone_suspected: Person is actively using phone
+            - gadget_suspected: Person is actively using a gadget (phone, tablet, etc.)
         
     Returns:
-        Event type string (EVENT_PRESENT, EVENT_AWAY, or EVENT_PHONE_SUSPECTED)
+        Event type string (EVENT_PRESENT, EVENT_AWAY, or EVENT_GADGET_SUSPECTED)
     """
     is_present = detection_state.get("present", False)
     is_at_desk = detection_state.get("at_desk", True)  # Default True for backward compat
@@ -31,7 +31,7 @@ def get_event_type(detection_state: dict) -> str:
     # Must be present AND at desk to count as working
     if not is_present or not is_at_desk:
         return config.EVENT_AWAY
-    elif detection_state.get("phone_suspected", False):
-        return config.EVENT_PHONE_SUSPECTED
+    elif detection_state.get("gadget_suspected", False):
+        return config.EVENT_GADGET_SUSPECTED
     else:
         return config.EVENT_PRESENT

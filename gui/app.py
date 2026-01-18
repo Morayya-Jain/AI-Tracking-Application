@@ -43,7 +43,7 @@ COLORS = {
     "text_white": "#FFFFFF",        # Pure white for buttons
     "status_focused": "#4ADE80",    # Green for focused
     "status_away": "#FBBF24",       # Amber for away
-    "status_phone": "#F87171",      # Red for phone
+    "status_gadget": "#F87171",     # Red for gadget distraction
     "status_idle": "#64748B",       # Gray for idle
     "button_start": "#22C55E",      # Green start button
     "button_start_hover": "#16A34A", # Darker green on hover
@@ -617,7 +617,7 @@ class GavinGUI:
     
     Provides a clean, scalable interface with:
     - Start/Stop session button
-    - Status indicator (Focused / Away / Phone Detected)
+    - Status indicator (Focused / Away / On another gadget)
     - Session timer
     - Auto-generates PDF report on session stop
     """
@@ -649,7 +649,7 @@ class GavinGUI:
         self.is_running = False
         self.should_stop = threading.Event()
         self.detection_thread: Optional[threading.Thread] = None
-        self.current_status = "idle"  # idle, focused, away, phone
+        self.current_status = "idle"  # idle, focused, away, gadget
         self.session_start_time: Optional[datetime] = None
         self.session_started = False  # Track if first detection has occurred
         
@@ -756,7 +756,7 @@ class GavinGUI:
             "idle": COLORS["status_idle"],
             "focused": COLORS["status_focused"],
             "away": COLORS["status_away"],
-            "phone": COLORS["status_phone"],
+            "gadget": COLORS["status_gadget"],
         }
         return color_map.get(self.current_status, COLORS["status_idle"])
     
@@ -910,7 +910,7 @@ class GavinGUI:
 
 How it works:
 • Camera frames are sent to OpenAI for analysis
-• AI detects your presence and phone usage
+• AI detects your presence and gadget distractions
 • No video is recorded or stored locally
 
 Privacy:
@@ -1059,8 +1059,8 @@ By clicking 'I Understand', you acknowledge this data processing."""
                         # Determine event type
                         event_type = get_event_type(detection_state)
                         
-                        # Check if user is unfocused (away or phone)
-                        is_unfocused = event_type in (config.EVENT_AWAY, config.EVENT_PHONE_SUSPECTED)
+                        # Check if user is unfocused (away or on gadget)
+                        is_unfocused = event_type in (config.EVENT_AWAY, config.EVENT_GADGET_SUSPECTED)
                         
                         if is_unfocused:
                             # Start tracking if not already
@@ -1113,7 +1113,7 @@ By clicking 'I Understand', you acknowledge this data processing."""
         status_map = {
             config.EVENT_PRESENT: ("focused", "Focused"),
             config.EVENT_AWAY: ("away", "Away from Desk"),
-            config.EVENT_PHONE_SUSPECTED: ("phone", "Phone Detected"),
+            config.EVENT_GADGET_SUSPECTED: ("gadget", "On another gadget"),
         }
         
         status, text = status_map.get(event_type, ("idle", "Unknown"))
@@ -1126,7 +1126,7 @@ By clicking 'I Understand', you acknowledge this data processing."""
         Update the status indicator and label.
         
         Args:
-            status: Status type (idle, focused, away, phone)
+            status: Status type (idle, focused, away, gadget)
             text: Display text
         """
         with self.ui_lock:

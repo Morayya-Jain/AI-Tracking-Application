@@ -30,7 +30,7 @@ python3 main.py
 
 1. A modern desktop window opens
 2. Click **"Start Session"** to begin tracking
-3. Watch the status indicator show Focused/Away/Phone Detected
+3. Watch the status indicator show Focused/Away/On another gadget
 4. Click **"Stop Session"** when you're done
 5. Click **"Generate Report"** to get your PDF!
 
@@ -77,7 +77,7 @@ Run with `python3 main.py --cli` for terminal-based tracking:
 
 ⚠ Moved away from desk (02:35 PM)
 ✓ Back at desk (02:37 PM)
-📱 Phone usage detected (02:42 PM)
+⚡ On another gadget (02:42 PM)
 
 Session ended. Duration: 45m
 
@@ -90,10 +90,10 @@ Session ended. Duration: 45m
 - **Lighting:** Ensure good lighting on your face
 - **Position:** Sit facing the camera
 - **Distance:** Stay within 1-2 meters of the camera
-- **Phone Detection:** System detects usage based on attention + screen state
-  - ✅ Looking at phone + screen ON = Detected (regardless of position)
-  - ❌ Phone on desk but looking at computer = Not detected
-- **False Positives:** Phone position doesn't matter - it's about where you're looking
+- **Gadget Detection:** System detects phones, tablets, game controllers, TV, etc.
+  - ✅ Actively using any gadget = Detected (regardless of position)
+  - ❌ Gadget on desk but looking at computer = Not detected
+- **False Positives:** Device position doesn't matter - it's about active engagement
 
 ## Need Help?
 
@@ -107,7 +107,7 @@ Your PDF report includes:
 ✅ Total session duration  
 ✅ Focused time percentage  
 ✅ Away time tracking  
-✅ Phone usage detection  
+✅ Gadget usage detection  
 ✅ Timeline of your session  
 ✅ AI-generated insights  
 ✅ Personalized improvement suggestions  

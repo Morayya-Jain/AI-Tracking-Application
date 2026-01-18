@@ -8,7 +8,7 @@
 Camera → OpenAI Vision (every 1 sec) → Detection Results → Log Events
                                      ↓
                               Person present?
-                              Phone visible?
+                              Gadget in use?
                               Other distractions?
 ```
 
@@ -33,8 +33,8 @@ OPENAI_VISION_MODEL = "gpt-4o-mini"  # Image analysis
 # Line 21: Detection frequency
 VISION_DETECTION_INTERVAL = 1.0  # Every 1 second
 
-# Line 22: Phone confidence
-PHONE_CONFIDENCE_THRESHOLD = 0.5  # 50% confidence
+# Line 22: Gadget confidence
+GADGET_CONFIDENCE_THRESHOLD = 0.5  # 50% confidence
 
 # Line 31: FPS (how often to analyze)
 DETECTION_FPS = 1  # 1 frame per second
@@ -69,12 +69,11 @@ prompt = """Analyze this webcam frame.
 Return JSON:
 {
   "person_present": true/false,
-  "phone_visible": true/false,
-  "phone_confidence": 0.0-1.0,
-  "tablet_visible": true/false,        # NEW!
+  "gadget_visible": true/false,
+  "gadget_confidence": 0.0-1.0,
   "eating_drinking": true/false,       # NEW!
   "talking_to_someone": true/false,    # NEW!
-  "distraction_type": "phone" | "tablet" | "eating" | "social" | "none",
+  "distraction_type": "phone" | "tablet" | "controller" | "tv" | "eating" | "social" | "none",
   "description": "What you see"
 }
 """
@@ -85,42 +84,40 @@ Then handle new fields in your code!
 ## 📊 What AI Detects
 
 ✅ **Person Present:** Any human visible in frame  
-✅ **Phone ACTIVELY BEING USED:** Based on attention + screen state (not position)  
-✅ **Phone Confidence:** How sure (0-100%)  
-✅ **Distraction Type:** What kind of distraction  
+✅ **Gadget ACTIVELY BEING USED:** Phones, tablets, controllers, TV, etc.  
+✅ **Gadget Confidence:** How sure (0-100%)  
+✅ **Distraction Type:** What kind of gadget/distraction  
 ✅ **Description:** Brief summary of scene  
 
-### IMPORTANT: Active Phone Usage Detection
+### IMPORTANT: Active Gadget Usage Detection
 
-The system detects **active phone usage** based on TWO factors:
+The system detects **active gadget usage** (phones, tablets, controllers, TV, etc.) based on TWO factors:
 
 **Detection Criteria (BOTH required):**
-1. **Attention**: Person's eyes/gaze directed AT the phone
-2. **Screen State**: Phone screen is ON (showing light/colors)
+1. **Attention**: Person's eyes/gaze directed AT the gadget
+2. **Device State**: Gadget is actively being used (screen ON, controller held)
 
 **Position is IRRELEVANT:**
-- Phone can be on desk OR in hands
-- What matters is attention + screen state
+- Gadget can be on desk OR in hands
+- What matters is attention + active engagement
 
 **✅ WILL Detect:**
-- Phone on desk + person looking down at it + screen ON
-- Phone in hands + person looking at screen + screen ON
-- Any position where person is engaged with an active screen
+- Phone/tablet in hands + person looking at screen + screen ON
+- Game controller in hands + person playing
+- Person looking at TV instead of work
+- Nintendo Switch, Steam Deck, etc. when actively used
 
 **❌ Will NOT Detect:**
-- Phone on desk + person looking at computer/elsewhere (no attention)
-- Phone anywhere + screen OFF or face-down (no active screen)
-- Phone in pocket/bag
-- Phone visible but person clearly focused on something else
+- Gadget on desk + person looking at computer/elsewhere (no attention)
+- Device screen OFF or put away
+- Controller sitting on desk, not being held
+- Device visible but person clearly focused on something else
 
-This prevents false positives while catching all real phone usage!
+This prevents false positives while catching all real gadget distractions!
 
 Can add:
-- Tablets
-- Other devices
 - Eating/drinking
 - Other people
-- Games
 - Anything AI can see!
 
 ## 🧪 Testing
@@ -137,7 +134,7 @@ Visit: https://platform.openai.com/usage
 
 1. **API Key Required** - App won't work without it
 2. **Credits Will Decrease** - Vision API is expensive
-3. **Much More Accurate** - AI actually sees phones!
+3. **Much More Accurate** - AI actually sees gadgets!
 4. **Extensible** - Easy to add new detections
 5. **No Fallbacks** - If AI fails, detection fails (by design)
 
@@ -146,7 +143,7 @@ Visit: https://platform.openai.com/usage
 **You wanted:**
 - ✅ OpenAI for everything
 - ✅ No hardcoded methods
-- ✅ Accurate phone detection
+- ✅ Accurate gadget detection
 - ✅ Extensible system
 
 **You got:** A professional AI-powered detection system!

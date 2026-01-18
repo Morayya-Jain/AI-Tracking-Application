@@ -16,16 +16,16 @@ class VisionDetector:
     """
     Uses OpenAI Vision API (GPT-4o/GPT-4o-mini with vision) to detect:
     - Person presence
-    - Active phone usage (attention + screen on - position doesn't matter)
+    - Active gadget usage (phones, tablets, iPads, game controllers, Nintendo Switch, TV, etc.)
     - Other distractions
     
     Much more accurate than hardcoded rules!
     
-    Important: Phone detection only triggers when BOTH conditions are met:
-    1. Person's attention/gaze is directed AT the phone
-    2. Phone screen is ON (visible light/colors)
+    Important: Gadget detection only triggers when BOTH conditions are met:
+    1. Person's attention/gaze is directed AT the gadget
+    2. Gadget screen/display is ON or device is actively being used
     
-    Position (on desk vs. in hands) doesn't matter - it's about attention and screen state.
+    Position (on desk vs. in hands) doesn't matter - it's about attention and engagement.
     """
     
     def __init__(self, api_key: Optional[str] = None, vision_model: str = "gpt-4o-mini"):
@@ -85,9 +85,9 @@ class VisionDetector:
             {
                 "person_present": bool,
                 "at_desk": bool (person is at working distance from camera),
-                "phone_visible": bool (attention + screen on, position irrelevant),
-                "phone_confidence": float (0-1),
-                "distraction_type": str or None,
+                "gadget_visible": bool (attention + device active, position irrelevant),
+                "gadget_confidence": float (0-1),
+                "distraction_type": str (phone, tablet, controller, tv, or none),
                 "description": str
             }
         
@@ -95,12 +95,12 @@ class VisionDetector:
             at_desk is True when person is at typical working distance (face/upper body
             clearly visible). False when person is far away/roaming in background.
             
-            phone_visible only returns True when BOTH conditions are met:
-            1. Person's attention/gaze is directed AT the phone
-            2. Phone screen is ON (showing light/colors)
+            gadget_visible only returns True when BOTH conditions are met:
+            1. Person's attention/gaze is directed AT the gadget
+            2. Gadget is actively being used (screen ON or engaged with device)
             
-            Position doesn't matter - phone can be on desk or in hands.
-            What matters is attention + screen state.
+            Position doesn't matter - gadget can be on desk or in hands.
+            What matters is attention + active engagement.
         """
         # Check cache
         current_time = time.time()
@@ -121,9 +121,9 @@ Analyze the image and return this exact JSON format:
 {
   "person_present": true or false,
   "at_desk": true or false,
-  "phone_visible": true or false,
-  "phone_confidence": 0.0 to 1.0,
-  "distraction_type": "phone" or "none",
+  "gadget_visible": true or false,
+  "gadget_confidence": 0.0 to 1.0,
+  "distraction_type": "phone" or "tablet" or "controller" or "tv" or "none",
   "description": "brief description of what you see"
 }
 
@@ -144,30 +144,41 @@ at_desk = FALSE when:
 
 Note: If person_present is false, set at_desk to false as well.
 
-CRITICAL RULES for phone detection - ONLY set phone_visible to true if BOTH conditions are met:
-1. Phone screen appears to be ON (showing light/colors, not black/off/face-down)
-2. Person's eyes/attention is directed AT the phone (looking at it, engaged with it)
+GADGET DETECTION - Detect distracting devices including:
+- Phones/smartphones
+- Tablets/iPads
+- Game controllers (PlayStation, Xbox, Nintendo Pro Controller)
+- Handheld gaming devices (Nintendo Switch, Steam Deck, PSP)
+- TV/monitor showing non-work content (if person is watching it)
 
-IMPORTANT: Phone can be on desk OR in hands - position doesn't matter. What matters is:
-- Is the person LOOKING at it? (eyes/gaze directed at phone)
-- Is the screen ON and usable? (not off/black/face-down)
+CRITICAL RULES - ONLY set gadget_visible to true if BOTH conditions are met:
+1. Device screen is ON or device is actively being held/used
+2. Person's eyes/attention is directed AT the gadget (looking at it, engaged with it)
 
-DO NOT detect as phone usage if:
-- Person's eyes/attention is directed ELSEWHERE (not looking at phone)
-- Phone screen is OFF, black, or face-down (even if person is near it)
-- Phone is visible but person is clearly focused on something else (computer, book, etc.)
-- Phone is in pocket/bag
+IMPORTANT: Gadget can be on desk OR in hands - position doesn't matter. What matters is:
+- Is the person LOOKING at it or engaged with it? (eyes/gaze directed at device)
+- Is the device active/being used? (screen on, controller in use, etc.)
+
+DO NOT detect as gadget usage if:
+- Person's eyes/attention is directed ELSEWHERE (not looking at the device)
+- Device screen is OFF, black, or face-down (even if person is near it)
+- Device is visible but person is clearly focused on work (computer, book, etc.)
+- Device is in pocket/bag or put away
+- Controller is just sitting on desk, not being held
 
 Examples:
-✓ Phone on desk + person looking down at it + screen glowing = DETECT
-✓ Phone in hands + person looking at screen + screen on = DETECT
+✓ Phone in hands + person looking at screen + screen on = DETECT (type: phone)
+✓ iPad/tablet on lap + person watching it = DETECT (type: tablet)
+✓ Game controller in hands + person playing = DETECT (type: controller)
+✓ Person looking at TV instead of work = DETECT (type: tv)
+✓ Nintendo Switch in hands + person playing = DETECT (type: controller)
 ✗ Phone on desk + person looking at computer screen = DO NOT DETECT
-✗ Phone on desk + screen is black/off = DO NOT DETECT
-✗ Phone face-down on desk = DO NOT DETECT
+✗ Controller on desk, not being held = DO NOT DETECT
+✗ TV in background but person focused on work = DO NOT DETECT
 
 Other rules:
 - Set person_present to true if you see a person's face or body (even if far away)
-- If unsure about active phone usage, set confidence below 0.5
+- If unsure about active gadget usage, set confidence below 0.5
 
 Respond with ONLY the JSON object, nothing else."""
             
@@ -233,8 +244,8 @@ Respond with ONLY the JSON object, nothing else."""
             detection_result = {
                 "person_present": result.get("person_present", False),
                 "at_desk": result.get("at_desk", True),  # Default True for backward compat
-                "phone_visible": result.get("phone_visible", False),
-                "phone_confidence": float(result.get("phone_confidence", 0.0)),
+                "gadget_visible": result.get("gadget_visible", False),
+                "gadget_confidence": float(result.get("gadget_confidence", 0.0)),
                 "distraction_type": result.get("distraction_type", "none"),
                 "description": result.get("description", "")
             }
@@ -244,8 +255,8 @@ Respond with ONLY the JSON object, nothing else."""
             self.last_detection_time = current_time
             
             # Log detection
-            if detection_result["phone_visible"]:
-                logger.info(f"📱 Phone detected by AI! Confidence: {detection_result['phone_confidence']:.2f}")
+            if detection_result["gadget_visible"]:
+                logger.info(f"⚡ Gadget detected by AI! Type: {detection_result['distraction_type']}, Confidence: {detection_result['gadget_confidence']:.2f}")
             
             # Log distance detection (person visible but far from desk)
             if detection_result["person_present"] and not detection_result["at_desk"]:
@@ -259,8 +270,8 @@ Respond with ONLY the JSON object, nothing else."""
             return {
                 "person_present": True,  # Assume present on error
                 "at_desk": True,  # Assume at desk on error
-                "phone_visible": False,
-                "phone_confidence": 0.0,
+                "gadget_visible": False,
+                "gadget_confidence": 0.0,
                 "distraction_type": "none",
                 "description": f"Error: {str(e)}"
             }
@@ -278,33 +289,35 @@ Respond with ONLY the JSON object, nothing else."""
         result = self.analyze_frame(frame)
         return result["person_present"]
     
-    def detect_phone_usage(self, frame: np.ndarray) -> bool:
+    def detect_gadget_usage(self, frame: np.ndarray) -> bool:
         """
-        Detect if phone is being ACTIVELY USED (not just visible).
+        Detect if a gadget is being ACTIVELY USED (not just visible).
+        
+        Gadgets include: phones, tablets, game controllers, Nintendo Switch, TV, etc.
         
         Active usage requires BOTH:
-        1. Person's attention/gaze directed AT the phone
-        2. Phone screen is ON (showing light/colors)
+        1. Person's attention/gaze directed AT the gadget
+        2. Gadget is active (screen ON or device being used)
         
-        Position irrelevant - phone can be:
-        - On desk (if person looking down at it with screen on)
-        - In hands (if person looking at it with screen on)
+        Position irrelevant - gadget can be:
+        - On desk (if person looking at it and it's active)
+        - In hands (if person engaged with it)
         
         Will NOT count as usage:
-        - Phone on desk but person looking at computer/elsewhere
-        - Phone screen OFF or face-down (even if person nearby)
-        - Phone visible but not being actively engaged with
+        - Gadget on desk but person looking at computer/elsewhere
+        - Gadget screen OFF or put away
+        - Gadget visible but not being actively engaged with
         
         Args:
             frame: BGR image from camera
             
         Returns:
-            True if phone is being actively used with high confidence, False otherwise
+            True if gadget is being actively used with high confidence, False otherwise
         """
         result = self.analyze_frame(frame)
         
-        # Phone detected if visible AND confidence > threshold
-        return result["phone_visible"] and result["phone_confidence"] > 0.5
+        # Gadget detected if visible AND confidence > threshold
+        return result["gadget_visible"] and result["gadget_confidence"] > 0.5
     
     def get_detection_state(self, frame: np.ndarray) -> Dict[str, bool]:
         """
@@ -317,8 +330,8 @@ Respond with ONLY the JSON object, nothing else."""
             Dictionary with detection results including:
             - present: Person is visible in frame
             - at_desk: Person is at working distance (not roaming far away)
-            - phone_suspected: Person is actively using phone
-            - distraction_type: Type of distraction detected
+            - gadget_suspected: Person is actively using a gadget (phone, tablet, controller, etc.)
+            - distraction_type: Type of distraction detected (phone, tablet, controller, tv, none)
             - ai_description: AI's description of the scene
         """
         result = self.analyze_frame(frame)
@@ -326,7 +339,7 @@ Respond with ONLY the JSON object, nothing else."""
         return {
             "present": result["person_present"],
             "at_desk": result.get("at_desk", True),  # Default True for backward compat
-            "phone_suspected": result["phone_visible"] and result["phone_confidence"] > 0.5,
+            "gadget_suspected": result["gadget_visible"] and result["gadget_confidence"] > 0.5,
             "distraction_type": result["distraction_type"],
             "ai_description": result["description"]
         }

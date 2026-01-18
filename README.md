@@ -1,15 +1,16 @@
 # Gavin AI
 
-A local AI-powered focus tracker that monitors presence and **active phone usage** via webcam, logs events, and generates PDF reports.
+A local AI-powered focus tracker that monitors presence and **gadget distractions** via webcam, logs events, and generates PDF reports.
 
 ## Features
 
 - **Desktop GUI**: Modern, minimal interface with Start/Stop button, status indicator, and timer
-- **AI-Powered Detection**: Uses OpenAI Vision API to detect person presence and active phone usage
-- **Smart Phone Detection**: Detects phone usage based on attention + screen state (not physical position)
-  - ✅ Detects: Person looking at phone + screen ON (whether on desk or in hands)
-  - ❌ Ignores: Phone on desk but person looking elsewhere, or screen OFF
-- **Session Analytics**: Computes focused time, away time, and phone usage statistics
+- **AI-Powered Detection**: Uses OpenAI Vision API to detect person presence and gadget distractions
+- **Smart Gadget Detection**: Detects device usage based on attention + active engagement (not physical position)
+  - Detects: Phones, tablets/iPads, game controllers, Nintendo Switch, TV, etc.
+  - ✅ Detects: Person actively using any gadget (looking at it + device active)
+  - ❌ Ignores: Gadget on desk but person looking elsewhere, or device inactive
+- **Session Analytics**: Computes focused time, away time, and gadget usage statistics
 - **PDF Reports**: Professional combined PDF with summary statistics and full session logs
 - **Privacy-Conscious**: Camera frames analyzed by OpenAI (30-day retention), no local video storage
 
@@ -49,7 +50,7 @@ python main.py
 
 The GUI provides:
 - **Start/Stop Button** - Control your session
-- **Status Indicator** - Real-time display of Focused/Away/Phone Detected
+- **Status Indicator** - Real-time display of Focused/Away/On another gadget
 - **Timer** - Track session duration
 - **Generate Report** - Create PDF report after session ends
 
@@ -72,7 +73,7 @@ python main.py --cli
 **CLI Mode:**
 1. Press Enter to start a focus session
 2. The app monitors your presence via webcam
-3. Events are logged (present, away, phone_suspected)
+3. Events are logged (present, away, gadget_suspected)
 4. Press 'q' or Enter to end the session
 5. A PDF report is automatically generated
 
@@ -138,15 +139,17 @@ Edit `config.py` to customize:
 - OpenAI retains images for 30 days (abuse monitoring), then automatically deletes them
 - No video or images stored locally on your device
 
-### Phone Detection Privacy
-- System detects **active phone usage** based on two factors:
-  1. **Attention**: Is the person looking at the phone?
-  2. **Screen State**: Is the phone screen ON?
-- **Position doesn't matter**: Phone can be on desk or in hands
+### Gadget Detection Privacy
+- System detects **active gadget usage** based on two factors:
+  1. **Attention**: Is the person looking at/engaged with the gadget?
+  2. **Device State**: Is the gadget actively being used?
+- **Gadgets detected**: Phones, tablets/iPads, game controllers, Nintendo Switch, TV, etc.
+- **Position doesn't matter**: Gadget can be on desk or in hands
 - **Examples:**
-  - ✅ Phone on desk + looking down at it + screen on = Detected
+  - ✅ Phone/tablet in use + looking at it = Detected
+  - ✅ Game controller in hands + playing = Detected
   - ❌ Phone on desk + looking at computer = NOT detected
-  - ❌ Phone anywhere + screen off/face-down = NOT detected
+  - ❌ Controller sitting on desk = NOT detected
 
 ### Data Storage
 - **Session data**: Stored locally as JSON (timestamps and event types only)

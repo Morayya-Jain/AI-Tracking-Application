@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 # Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ai.summariser import SessionSummariser
 from dotenv import load_dotenv
@@ -48,7 +48,7 @@ test_stats = {
     "total_minutes": 30.0,
     "focused_minutes": 22.0,
     "away_minutes": 5.0,
-    "phone_minutes": 3.0,
+    "gadget_minutes": 3.0,
     "events": [
         {
             "type": "present",
@@ -65,8 +65,8 @@ test_stats = {
             "duration_minutes": 5.0
         },
         {
-            "type": "phone_suspected",
-            "type_label": "Phone Usage",
+            "type": "gadget_suspected",
+            "type_label": "Gadget Usage",
             "start": "02:27 PM",
             "end": "02:30 PM",
             "duration_minutes": 3.0
