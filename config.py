@@ -60,12 +60,12 @@ EVENT_PHONE_SUSPECTED = "phone_suspected"
 # Unfocused alert settings
 # Alert plays at each of these thresholds (in seconds) when user is unfocused
 # After all alerts play, no more until user refocuses
-UNFOCUSED_ALERT_TIMES = [15, 60, 120]  # Escalating alerts: 15s, 1min, 2min
+UNFOCUSED_ALERT_TIMES = [20, 60, 120]  # Escalating alerts: 20s, 1min, 2min
 
 # Supportive, non-condemning messages for each alert level
 # Each tuple: (badge_text, main_message)
 UNFOCUSED_ALERT_MESSAGES = [
-    ("Focus paused", "We noticed you stepped away!"),           # 15s - gentle notice
+    ("Focus paused", "We noticed you stepped away!"),           # 20s - gentle notice
     ("Quick check-in", "We are waiting for you :)"),       # 1min - reassuring
     ("Reminder", "Don't forget to come back ;)"),  # 2min - supportive
 ]

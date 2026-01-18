@@ -84,6 +84,7 @@ class VisionDetector:
             Dictionary with detection results:
             {
                 "person_present": bool,
+                "at_desk": bool (person is at working distance from camera),
                 "phone_visible": bool (attention + screen on, position irrelevant),
                 "phone_confidence": float (0-1),
                 "distraction_type": str or None,
@@ -91,6 +92,9 @@ class VisionDetector:
             }
         
         Note:
+            at_desk is True when person is at typical working distance (face/upper body
+            clearly visible). False when person is far away/roaming in background.
+            
             phone_visible only returns True when BOTH conditions are met:
             1. Person's attention/gaze is directed AT the phone
             2. Phone screen is ON (showing light/colors)
@@ -116,11 +120,29 @@ You MUST respond with ONLY a valid JSON object (no other text before or after).
 Analyze the image and return this exact JSON format:
 {
   "person_present": true or false,
+  "at_desk": true or false,
   "phone_visible": true or false,
   "phone_confidence": 0.0 to 1.0,
   "distraction_type": "phone" or "none",
   "description": "brief description of what you see"
 }
+
+DESK PROXIMITY DETECTION - determine if person is at working distance:
+
+at_desk = TRUE when:
+- Person's face/upper body is clearly visible and fills a reasonable portion of the frame
+- Person appears to be seated at or standing near a workstation
+- Person is leaning back in chair but still at the desk area
+- Person is at typical webcam working distance (within arm's reach of camera)
+
+at_desk = FALSE when:
+- Person appears small/distant in the frame (background figure)
+- Person is clearly roaming around the room away from the desk
+- Only a small silhouette or partial body visible in the distance
+- Person would need to walk several steps to reach the desk/camera
+- Person is in the background of the room, not at the workstation
+
+Note: If person_present is false, set at_desk to false as well.
 
 CRITICAL RULES for phone detection - ONLY set phone_visible to true if BOTH conditions are met:
 1. Phone screen appears to be ON (showing light/colors, not black/off/face-down)
@@ -144,7 +166,7 @@ Examples:
 ✗ Phone face-down on desk = DO NOT DETECT
 
 Other rules:
-- Set person_present to true if you see a person's face or body
+- Set person_present to true if you see a person's face or body (even if far away)
 - If unsure about active phone usage, set confidence below 0.5
 
 Respond with ONLY the JSON object, nothing else."""
@@ -210,6 +232,7 @@ Respond with ONLY the JSON object, nothing else."""
             # Validate and normalize result
             detection_result = {
                 "person_present": result.get("person_present", False),
+                "at_desk": result.get("at_desk", True),  # Default True for backward compat
                 "phone_visible": result.get("phone_visible", False),
                 "phone_confidence": float(result.get("phone_confidence", 0.0)),
                 "distraction_type": result.get("distraction_type", "none"),
@@ -224,6 +247,10 @@ Respond with ONLY the JSON object, nothing else."""
             if detection_result["phone_visible"]:
                 logger.info(f"📱 Phone detected by AI! Confidence: {detection_result['phone_confidence']:.2f}")
             
+            # Log distance detection (person visible but far from desk)
+            if detection_result["person_present"] and not detection_result["at_desk"]:
+                logger.info("👤 Person visible but far from desk - marking as away")
+            
             return detection_result
             
         except Exception as e:
@@ -231,6 +258,7 @@ Respond with ONLY the JSON object, nothing else."""
             # Return safe default
             return {
                 "person_present": True,  # Assume present on error
+                "at_desk": True,  # Assume at desk on error
                 "phone_visible": False,
                 "phone_confidence": 0.0,
                 "distraction_type": "none",
@@ -286,12 +314,18 @@ Respond with ONLY the JSON object, nothing else."""
             frame: BGR image from camera
             
         Returns:
-            Dictionary with detection results
+            Dictionary with detection results including:
+            - present: Person is visible in frame
+            - at_desk: Person is at working distance (not roaming far away)
+            - phone_suspected: Person is actively using phone
+            - distraction_type: Type of distraction detected
+            - ai_description: AI's description of the scene
         """
         result = self.analyze_frame(frame)
         
         return {
             "present": result["person_present"],
+            "at_desk": result.get("at_desk", True),  # Default True for backward compat
             "phone_suspected": result["phone_visible"] and result["phone_confidence"] > 0.5,
             "distraction_type": result["distraction_type"],
             "ai_description": result["description"]

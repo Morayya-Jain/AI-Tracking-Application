@@ -13,6 +13,7 @@ Gavin AI uses **OpenAI for EVERYTHING**:
 │      ↓                                              │
 │  OpenAI Vision API (gpt-4o-mini)                   │
 │      ├→ Detects: Person present?                   │
+│      ├→ Detects: At desk (close to camera)?        │
 │      ├→ Detects: Phone visible?                    │
 │      ├→ Detects: Other distractions?               │
 │      └→ Returns: JSON detection results            │
@@ -48,12 +49,18 @@ OpenAI Vision API Call
     ↓
 Returns:
 {
-  "person_present": true/false,
+  "person_present": true/false,  # Is any body part visible?
+  "at_desk": true/false,         # Is person at working distance? (not roaming far away)
   "phone_visible": true/false,
   "phone_confidence": 0.0-1.0,
   "distraction_type": "phone" | "none" | other
 }
 ```
+
+**Distance-Aware Detection:**
+- `person_present=true` + `at_desk=true` → Focused (at desk)
+- `person_present=true` + `at_desk=false` → Away (roaming around room)
+- `person_present=false` → Away (not visible)
 
 ---
 

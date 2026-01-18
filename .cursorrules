@@ -68,7 +68,11 @@ Reports are saved to: ~/Downloads/
 ### 1. AI-Powered Detection (Primary System)
 - **ALL detection uses OpenAI Vision API** (no hardcoded methods)
 - Send camera frames to OpenAI every second (configurable via DETECTION_FPS)
-- Vision API returns: person_present, phone_visible (ACTIVE usage only), distraction_type
+- Vision API returns: person_present, at_desk, phone_visible (ACTIVE usage only), distraction_type
+- **Distance-aware presence detection**:
+  - `person_present`: True if any body part visible (even far away)
+  - `at_desk`: True only if person is at working distance (face/upper body clearly visible)
+  - Student roaming 10m away = person_present=true, at_desk=false = marked as "away"
 - **Phone detection is smart**: Detects based on attention + screen state (not position)
   - Requires: Person looking at phone AND screen is ON
   - Position irrelevant: Phone can be on desk or in hands
@@ -83,8 +87,8 @@ Reports are saved to: ~/Downloads/
 
 ### 3. Event System
 Three event types tracked:
-- `present`: Person at desk, focused
-- `away`: Person not visible
+- `present`: Person at desk (close to camera), focused
+- `away`: Person not visible OR visible but far from desk (roaming around room)
 - `phone_suspected`: Phone detected in frame
 
 Events have: type, start time, end time, duration
