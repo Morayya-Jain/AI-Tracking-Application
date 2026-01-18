@@ -41,6 +41,7 @@ Single combined PDF: Page 1 = Summary Statistics table. Page 2+ = All session lo
 - `present`: At desk, focused
 - `away`: Not visible
 - `gadget_suspected`: Actively using gadget (phone, tablet, controller, TV, etc.)
+  - ⚠️ Smartwatches are NOT detected (used for time/notifications, not distractions)
 
 ---
 

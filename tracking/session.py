@@ -97,7 +97,7 @@ class Session:
             elif event_type == config.EVENT_PRESENT:
                 print(f"✓ Back at desk ({timestamp.strftime('%I:%M %p')})")
             elif event_type == config.EVENT_GADGET_SUSPECTED:
-                print(f"⚡ On another gadget ({timestamp.strftime('%I:%M %p')})")
+                print(f"📱 On another gadget ({timestamp.strftime('%I:%M %p')})")
     
     def _finalize_current_state(self, end_time: Optional[datetime] = None) -> None:
         """

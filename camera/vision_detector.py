@@ -19,6 +19,9 @@ class VisionDetector:
     - Active gadget usage (phones, tablets, iPads, game controllers, Nintendo Switch, TV, etc.)
     - Other distractions
     
+    Note: Smartwatches/Apple Watches are explicitly EXCLUDED from detection
+    as they are not considered distractions (used for time/notifications).
+    
     Much more accurate than hardcoded rules!
     
     Important: Gadget detection only triggers when BOTH conditions are met:
@@ -105,6 +108,7 @@ DO NOT detect if:
 - Device screen OFF/face-down
 - Person focused on work (computer, book)
 - Controller just sitting on desk
+- Smartwatch/Apple Watch (NOT a distraction - used for time/notifications)
 
 RULES:
 - person_present=true if any body part visible (even far away)
@@ -228,7 +232,7 @@ RULES:
             
             # Log detection
             if detection_result["gadget_visible"]:
-                logger.info(f"⚡ Gadget detected by AI! Type: {detection_result['distraction_type']}, Confidence: {detection_result['gadget_confidence']:.2f}")
+                logger.info(f"📱 Gadget detected by AI! Type: {detection_result['distraction_type']}, Confidence: {detection_result['gadget_confidence']:.2f}")
             
             # Log distance detection (person visible but far from desk)
             if detection_result["person_present"] and not detection_result["at_desk"]:

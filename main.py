@@ -267,7 +267,7 @@ class GavinAI:
         print(f"\n⏱️  Total Duration: {total_min:.1f} minutes")
         print(f"🎯 Focused Time: {focused_min:.1f} minutes ({focus_pct:.1f}%)")
         print(f"🚶 Away Time: {away_min:.1f} minutes")
-        print(f"⚡ Gadget Usage: {gadget_min:.1f} minutes")
+        print(f"📱 Gadget Usage: {gadget_min:.1f} minutes")
 
 
 def main_cli():

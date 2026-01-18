@@ -497,8 +497,8 @@ VISION_DETECTION_INTERVAL = 3.0
 ✓ Session started at 09:30 PM
 💡 Monitoring your focus session...
 
-INFO: ⚡ Gadget detected by AI! Type: phone, Confidence: 0.85
-⚡ On another gadget (09:32 PM)
+INFO: 📱 Gadget detected by AI! Type: phone, Confidence: 0.85
+📱 On another gadget (09:32 PM)
 
 INFO: ✓ Gadget no longer in use
 ✓ Back at desk (09:33 PM)

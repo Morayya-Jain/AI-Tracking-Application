@@ -77,7 +77,7 @@ Run with `python3 main.py --cli` for terminal-based tracking:
 
 ⚠ Moved away from desk (02:35 PM)
 ✓ Back at desk (02:37 PM)
-⚡ On another gadget (02:42 PM)
+📱 On another gadget (02:42 PM)
 
 Session ended. Duration: 45m
 

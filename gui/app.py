@@ -56,10 +56,10 @@ COLORS = {
 PRIVACY_FILE = Path(__file__).parent.parent / "data" / ".privacy_accepted"
 
 # Base dimensions for scaling
-BASE_WIDTH = 420
-BASE_HEIGHT = 420
-MIN_WIDTH = 350
-MIN_HEIGHT = 380
+BASE_WIDTH = 520
+BASE_HEIGHT = 520
+MIN_WIDTH = 420
+MIN_HEIGHT = 420
 
 
 class RoundedFrame(tk.Canvas):
@@ -630,6 +630,8 @@ class GavinGUI:
         self.root.configure(bg=COLORS["bg_dark"])
         
         # Window size and positioning - center on screen
+        # Update to ensure accurate screen dimensions
+        self.root.update_idletasks()
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
         x = (screen_width - BASE_WIDTH) // 2
@@ -741,8 +743,8 @@ class GavinGUI:
             
             # Scale button proportionally (but keep minimum size)
             if hasattr(self, 'start_stop_btn'):
-                new_btn_width = max(140, int(160 * new_scale))
-                new_btn_height = max(40, int(44 * new_scale))
+                new_btn_width = max(160, int(180 * new_scale))
+                new_btn_height = max(46, int(52 * new_scale))
                 self.start_stop_btn.configure(width=new_btn_width, height=new_btn_height)
                 self.start_stop_btn._draw_button()
             
@@ -883,8 +885,8 @@ class GavinGUI:
             fg_color=COLORS["text_white"],
             font=self.font_button,
             corner_radius=10,
-            width=160,
-            height=44
+            width=180,
+            height=52
         )
         self.start_stop_btn.pack()
         

@@ -40,7 +40,7 @@ LOG_LEVEL=INFO
 ```
 2026-01-14 10:30:45 - main - INFO - Session started
 2026-01-14 10:30:46 - httpx - DEBUG - HTTP Request: POST https://api.openai.com/v1/chat/completions
-2026-01-14 10:30:47 - vision_detector - INFO - ⚡ Gadget detected by AI! Type: phone, Confidence: 0.85
+2026-01-14 10:30:47 - vision_detector - INFO - 📱 Gadget detected by AI! Type: phone, Confidence: 0.85
 2026-01-14 10:31:00 - main - INFO - Session ended
 ```
 
@@ -48,7 +48,7 @@ LOG_LEVEL=INFO
 ```
 ✓ Session started at 10:30 AM
 💡 Monitoring your focus session...
-⚡ On another gadget (10:30 AM)
+📱 On another gadget (10:30 AM)
 Session ended. Duration: 30s
 ```
 
@@ -60,7 +60,7 @@ Session ended. Duration: 30s
 2026-01-14 10:30:46 - httpcore - DEBUG - connect_tcp.complete return_value=<...>
 2026-01-14 10:30:47 - openai - DEBUG - Response status: 200
 2026-01-14 10:30:47 - vision_detector - DEBUG - Vision API raw response: {"person_present": true...
-2026-01-14 10:30:47 - vision_detector - INFO - ⚡ Gadget detected by AI! Type: phone, Confidence: 0.85
+2026-01-14 10:30:47 - vision_detector - INFO - 📱 Gadget detected by AI! Type: phone, Confidence: 0.85
 ```
 
 ---

@@ -10,6 +10,7 @@ A local AI-powered focus tracker that monitors presence and **gadget distraction
   - Detects: Phones, tablets/iPads, game controllers, Nintendo Switch, TV, etc.
   - ✅ Detects: Person actively using any gadget (looking at it + device active)
   - ❌ Ignores: Gadget on desk but person looking elsewhere, or device inactive
+  - ❌ Ignores: Smartwatches/Apple Watch (used for time/notifications, not distractions)
 - **Session Analytics**: Computes focused time, away time, and gadget usage statistics
 - **PDF Reports**: Professional combined PDF with summary statistics and full session logs
 - **Privacy-Conscious**: Camera frames analyzed by OpenAI (30-day retention), no local video storage
@@ -144,12 +145,14 @@ Edit `config.py` to customize:
   1. **Attention**: Is the person looking at/engaged with the gadget?
   2. **Device State**: Is the gadget actively being used?
 - **Gadgets detected**: Phones, tablets/iPads, game controllers, Nintendo Switch, TV, etc.
+- **Explicitly excluded**: Smartwatches/Apple Watch (not considered distractions)
 - **Position doesn't matter**: Gadget can be on desk or in hands
 - **Examples:**
   - ✅ Phone/tablet in use + looking at it = Detected
   - ✅ Game controller in hands + playing = Detected
   - ❌ Phone on desk + looking at computer = NOT detected
   - ❌ Controller sitting on desk = NOT detected
+  - ❌ Smartwatch on wrist = NOT detected (checking time is fine)
 
 ### Data Storage
 - **Session data**: Stored locally as JSON (timestamps and event types only)
