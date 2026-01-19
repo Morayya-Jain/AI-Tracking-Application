@@ -9,11 +9,12 @@
 | File | Purpose |
 |------|---------|
 | `main.py` | Entry point, camera loop |
-| `config.py` | **ALL constants** (models, FPS, thresholds) |
+| `config.py` | **ALL constants** (models, FPS, thresholds, usage limits) |
 | `instance_lock.py` | **Single-instance enforcement** (cross-platform file lock) |
 | `camera/vision_detector.py` | Main detection logic (`analyze_frame()`) |
 | `tracking/analytics.py` | **Stats computation - MATH MUST ADD UP** |
 | `tracking/session.py` | Event logging, state changes |
+| `tracking/usage_limiter.py` | **MVP usage time tracking & limits** |
 | `reporting/pdf_report.py` | PDF generation (~/Downloads/) |
 
 *Ignore: `detection.py`, `phone_detector.py` (legacy)*
@@ -145,6 +146,7 @@ python3 -m unittest tests.test_session tests.test_analytics
 - `data/focus_statements.json` - **REQUIRED** - Contains feedback message templates for PDF reports
 - `data/.privacy_accepted` - User-specific flag, gitignored
 - `data/.gavin_instance.lock` - Instance lock file (auto-managed, gitignored)
+- `data/usage_data.json` - MVP usage tracking (time used, extensions granted)
 
 ---
 
@@ -155,3 +157,26 @@ Only one instance of Gavin AI can run at a time. Implemented via cross-platform 
 - **Windows**: `msvcrt.locking()` - same behavior
 
 Lock file: `data/.gavin_instance.lock` - automatically cleaned up on exit.
+
+---
+
+## ⏱️ MVP Usage Limit
+
+**Purpose**: Limits trial usage to prevent unbounded API costs.
+
+**Key Files**:
+- `tracking/usage_limiter.py` - Time tracking logic
+- `config.py` - `MVP_LIMIT_SECONDS`, `MVP_EXTENSION_SECONDS`, `MVP_UNLOCK_PASSWORD`
+
+**Behavior**:
+- Default: Configurable via `MVP_LIMIT_SECONDS` (cumulative across all sessions)
+- Time badge shown in GUI header (click for details)
+- When exhausted: Session stops immediately, lockout overlay appears
+- Password unlock: Grants `MVP_EXTENSION_SECONDS` per successful unlock
+
+**Config (.env)**:
+```
+MVP_UNLOCK_PASSWORD=your-secret-password
+```
+
+**Data stored**: `data/usage_data.json` - total_used_seconds, total_granted_seconds, extensions_granted

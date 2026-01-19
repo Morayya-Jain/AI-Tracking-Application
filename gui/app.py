@@ -26,6 +26,7 @@ from camera.vision_detector import VisionDetector
 from camera import get_event_type
 from tracking.session import Session
 from tracking.analytics import compute_statistics
+from tracking.usage_limiter import get_usage_limiter, UsageLimiter
 from reporting.pdf_report import generate_report
 from instance_lock import check_single_instance, get_existing_pid
 
@@ -50,6 +51,9 @@ COLORS = {
     "button_start_hover": "#16A34A", # Darker green on hover
     "button_stop": "#EF4444",       # Red stop button
     "button_stop_hover": "#DC2626", # Darker red on hover
+    "time_badge": "#8B5CF6",        # Purple for time remaining badge
+    "time_badge_low": "#F97316",    # Orange when time is low
+    "time_badge_expired": "#EF4444", # Red when time expired
 }
 
 # Privacy settings file
@@ -660,6 +664,10 @@ class GavinGUI:
         self.unfocused_start_time: Optional[float] = None
         self.alerts_played: int = 0  # Tracks how many alerts have been played (max 3)
         
+        # Usage limit tracking
+        self.usage_limiter: UsageLimiter = get_usage_limiter()
+        self.is_locked: bool = False  # True when time exhausted and app is locked
+        
         # UI update lock
         self.ui_lock = threading.Lock()
         
@@ -670,11 +678,20 @@ class GavinGUI:
         # Bind resize event for scaling
         self.root.bind("<Configure>", self._on_resize)
         
+        # Bind Enter key to start/stop session
+        self.root.bind("<Return>", self._on_enter_key)
+        
         # Check privacy acceptance
         self.root.after(100, self._check_privacy)
         
+        # Check usage limit status
+        self.root.after(200, self._check_usage_limit)
+        
         # Update timer periodically
         self._update_timer()
+        
+        # Update usage display periodically
+        self._update_usage_display()
         
         # Handle window close
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -709,6 +726,10 @@ class GavinGUI:
         
         self.font_small = tkfont.Font(
             family=font_family, size=11, weight="normal"
+        )
+        
+        self.font_badge = tkfont.Font(
+            family=font_family, size=10, weight="bold"
         )
     
     
@@ -812,6 +833,26 @@ class GavinGUI:
             bg=COLORS["bg_dark"]
         )
         self.subtitle_label.pack()
+        
+        # --- Time Remaining Badge (clickable for details) ---
+        self.time_badge_frame = tk.Frame(title_frame, bg=COLORS["bg_dark"])
+        self.time_badge_frame.pack(pady=(10, 0))
+        
+        self.time_badge = tk.Label(
+            self.time_badge_frame,
+            text="2h 0m left",
+            font=self.font_badge,
+            fg=COLORS["text_white"],
+            bg=COLORS["time_badge"],
+            padx=12,
+            pady=4,
+            cursor="hand2"
+        )
+        self.time_badge.pack()
+        self.time_badge.bind("<Button-1>", self._show_usage_details)
+        
+        # Lockout overlay (hidden by default)
+        self.lockout_frame: Optional[tk.Frame] = None
         
         # --- Status Card (Rounded) ---
         status_container = tk.Frame(self.main_frame, bg=COLORS["bg_dark"])
@@ -938,6 +979,297 @@ By clicking 'I Understand', you acknowledge this data processing."""
             # User declined - close app
             self.root.destroy()
     
+    def _check_usage_limit(self):
+        """Check if usage time is exhausted and show lockout if needed."""
+        if self.usage_limiter.is_time_exhausted():
+            self.is_locked = True
+            self._show_lockout_overlay()
+            logger.info("App locked - usage time exhausted")
+        else:
+            self.is_locked = False
+            self._update_time_badge()
+    
+    def _update_usage_display(self):
+        """Update the time badge display periodically."""
+        if not self.is_locked:
+            self._update_time_badge()
+        
+        # Calculate actual remaining time (same as badge display)
+        base_remaining = self.usage_limiter.get_remaining_seconds()
+        if self.is_running and self.session_started and self.session_start_time:
+            session_elapsed = int((datetime.now() - self.session_start_time).total_seconds())
+            remaining = max(0, base_remaining - session_elapsed)
+        else:
+            remaining = base_remaining
+        
+        # Determine update interval based on actual remaining time
+        if self.is_running:
+            if remaining <= 10:
+                # Update every second when time is very low
+                update_interval = 1000
+            elif remaining <= 60:
+                # Update every 2 seconds when under a minute
+                update_interval = 2000
+            else:
+                # Normal: every 5 seconds during session
+                update_interval = 5000
+        else:
+            # When not running, update less frequently
+            update_interval = 30000
+        
+        self.root.after(update_interval, self._update_usage_display)
+    
+    def _update_time_badge(self):
+        """Update the time remaining badge text and color."""
+        # Get base remaining time from usage limiter
+        base_remaining = self.usage_limiter.get_remaining_seconds()
+        
+        # If session is running, subtract current session's elapsed time
+        if self.is_running and self.session_started and self.session_start_time:
+            session_elapsed = int((datetime.now() - self.session_start_time).total_seconds())
+            remaining = max(0, base_remaining - session_elapsed)
+        else:
+            remaining = base_remaining
+        
+        time_text = self.usage_limiter.format_time(remaining)
+        
+        # Determine badge color based on remaining time
+        if remaining <= 0:
+            badge_color = COLORS["time_badge_expired"]
+            time_text = "Time expired"
+        elif remaining <= 600:  # 10 minutes or less
+            badge_color = COLORS["time_badge_expired"]
+            time_text = f"{time_text} left"
+        elif remaining <= 1800:  # 30 minutes or less
+            badge_color = COLORS["time_badge_low"]
+            time_text = f"{time_text} left"
+        else:
+            badge_color = COLORS["time_badge"]
+            time_text = f"{time_text} left"
+        
+        self.time_badge.configure(text=time_text, bg=badge_color)
+    
+    def _show_usage_details(self, event=None):
+        """Show a popup with detailed usage information."""
+        summary = self.usage_limiter.get_status_summary()
+        
+        # Add extension info
+        if self.usage_limiter.is_time_exhausted():
+            summary += "\n\nClick 'Request More Time' to unlock additional usage."
+        
+        messagebox.showinfo("Usage Details", summary)
+    
+    def _show_lockout_overlay(self):
+        """Show the lockout overlay when time is exhausted."""
+        if self.lockout_frame is not None:
+            return  # Already showing
+        
+        # Create overlay frame that covers the main content
+        self.lockout_frame = tk.Frame(
+            self.main_frame,
+            bg=COLORS["bg_dark"]
+        )
+        self.lockout_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
+        
+        # Center content
+        content_frame = tk.Frame(self.lockout_frame, bg=COLORS["bg_dark"])
+        content_frame.place(relx=0.5, rely=0.5, anchor="center")
+        
+        # Expired icon/text
+        expired_label = tk.Label(
+            content_frame,
+            text="⏱️",
+            font=tkfont.Font(size=48),
+            fg=COLORS["text_primary"],
+            bg=COLORS["bg_dark"]
+        )
+        expired_label.pack(pady=(0, 10))
+        
+        title_label = tk.Label(
+            content_frame,
+            text="Time Exhausted",
+            font=self.font_title,
+            fg=COLORS["time_badge_expired"],
+            bg=COLORS["bg_dark"]
+        )
+        title_label.pack(pady=(0, 10))
+        
+        message_label = tk.Label(
+            content_frame,
+            text="Your trial time has run out.\nRequest more time to continue using Gavin AI.",
+            font=self.font_status,
+            fg=COLORS["text_secondary"],
+            bg=COLORS["bg_dark"],
+            justify="center"
+        )
+        message_label.pack(pady=(0, 20))
+        
+        # Request More Time button
+        request_btn = RoundedButton(
+            content_frame,
+            text="Request More Time",
+            command=self._show_password_dialog,
+            bg_color=COLORS["accent_primary"],
+            hover_color="#0EA5E9",
+            fg_color=COLORS["text_white"],
+            font=self.font_button,
+            corner_radius=10,
+            width=200,
+            height=52
+        )
+        request_btn.pack()
+        
+        # Update badge to show expired state
+        self._update_time_badge()
+        
+        # Disable start button
+        self.start_stop_btn.configure_button(state=tk.DISABLED)
+    
+    def _hide_lockout_overlay(self):
+        """Hide the lockout overlay after successful unlock."""
+        if self.lockout_frame is not None:
+            self.lockout_frame.destroy()
+            self.lockout_frame = None
+        
+        self.is_locked = False
+        self._update_time_badge()
+        
+        # Re-enable start button
+        self.start_stop_btn.configure_button(state=tk.NORMAL)
+        
+        logger.info("App unlocked - time extension granted")
+    
+    def _show_password_dialog(self):
+        """Show dialog to enter unlock password."""
+        # Create dialog window
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Unlock More Time")
+        dialog.configure(bg=COLORS["bg_dark"])
+        dialog.resizable(False, False)
+        
+        # Size and position
+        dialog_width = 350
+        dialog_height = 200
+        x = self.root.winfo_x() + (self.root.winfo_width() - dialog_width) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - dialog_height) // 2
+        dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
+        
+        # Make modal
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Content
+        content = tk.Frame(dialog, bg=COLORS["bg_dark"])
+        content.pack(fill=tk.BOTH, expand=True, padx=25, pady=20)
+        
+        title = tk.Label(
+            content,
+            text="Enter Password",
+            font=self.font_status,
+            fg=COLORS["text_primary"],
+            bg=COLORS["bg_dark"]
+        )
+        title.pack(pady=(0, 5))
+        
+        extension_time = self.usage_limiter.format_time(config.MVP_EXTENSION_SECONDS)
+        subtitle = tk.Label(
+            content,
+            text=f"Enter the unlock password to add {extension_time} more",
+            font=self.font_small,
+            fg=COLORS["text_secondary"],
+            bg=COLORS["bg_dark"]
+        )
+        subtitle.pack(pady=(0, 15))
+        
+        # Password entry
+        password_var = tk.StringVar()
+        password_entry = tk.Entry(
+            content,
+            textvariable=password_var,
+            show="•",
+            font=self.font_status,
+            width=25
+        )
+        password_entry.pack(pady=(0, 10))
+        password_entry.focus_set()
+        
+        # Error label (hidden initially)
+        error_label = tk.Label(
+            content,
+            text="",
+            font=self.font_small,
+            fg=COLORS["time_badge_expired"],
+            bg=COLORS["bg_dark"]
+        )
+        error_label.pack(pady=(0, 10))
+        
+        def try_unlock():
+            """Attempt to unlock with entered password."""
+            password = password_var.get()
+            
+            if not password:
+                error_label.configure(text="Please enter a password")
+                return
+            
+            if self.usage_limiter.validate_password(password):
+                # Grant extension
+                extension_seconds = self.usage_limiter.grant_extension()
+                extension_time = self.usage_limiter.format_time(extension_seconds)
+                dialog.destroy()
+                self._hide_lockout_overlay()
+                messagebox.showinfo(
+                    "Time Added",
+                    f"{extension_time} has been added to your account.\n\n"
+                    f"New balance: {self.usage_limiter.format_time(self.usage_limiter.get_remaining_seconds())}"
+                )
+            else:
+                error_label.configure(text="Incorrect password")
+                password_var.set("")
+                password_entry.focus_set()
+        
+        # Bind Enter key
+        password_entry.bind("<Return>", lambda e: try_unlock())
+        
+        # Buttons frame
+        btn_frame = tk.Frame(content, bg=COLORS["bg_dark"])
+        btn_frame.pack(fill=tk.X)
+        
+        cancel_btn = tk.Button(
+            btn_frame,
+            text="Cancel",
+            command=dialog.destroy,
+            font=self.font_small,
+            width=10
+        )
+        cancel_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        unlock_btn = tk.Button(
+            btn_frame,
+            text="Unlock",
+            command=try_unlock,
+            font=self.font_small,
+            width=10
+        )
+        unlock_btn.pack(side=tk.RIGHT)
+    
+    def _on_enter_key(self, event=None):
+        """
+        Handle Enter key press to start/stop session.
+        
+        Args:
+            event: Key event (unused but required for binding)
+        """
+        # Don't toggle if locked or if focus is on an Entry widget (e.g., password dialog)
+        if self.is_locked:
+            return
+        
+        # Check if focus is on an Entry widget (don't intercept typing)
+        focused_widget = self.root.focus_get()
+        if isinstance(focused_widget, tk.Entry):
+            return
+        
+        self._toggle_session()
+    
     def _toggle_session(self):
         """Toggle between starting and stopping a session."""
         if not self.is_running:
@@ -947,6 +1279,21 @@ By clicking 'I Understand', you acknowledge this data processing."""
     
     def _start_session(self):
         """Start a new focus session."""
+        # Check if locked due to usage limit
+        if self.is_locked:
+            messagebox.showwarning(
+                "Time Exhausted",
+                "Your trial time has run out.\n\n"
+                "Click 'Request More Time' to unlock additional usage."
+            )
+            return
+        
+        # Check if there's enough time remaining
+        if self.usage_limiter.is_time_exhausted():
+            self.is_locked = True
+            self._show_lockout_overlay()
+            return
+        
         # Verify API key exists
         if not config.OPENAI_API_KEY:
             messagebox.showerror(
@@ -1002,8 +1349,13 @@ By clicking 'I Understand', you acknowledge this data processing."""
             self.detection_thread.join(timeout=2.0)
         
         # End session (only if it was actually started after first detection)
-        if self.session and self.session_started:
+        if self.session and self.session_started and self.session_start_time:
+            # Calculate and record session duration
+            session_duration = int((stop_time - self.session_start_time).total_seconds())
+            self.usage_limiter.record_usage(session_duration)
+            
             self.session.end(stop_time)  # Use the captured stop time
+            self.usage_limiter.end_session()
         
         # Update UI to show generating status
         self._update_status("idle", "Generating Reports...")
@@ -1012,6 +1364,9 @@ By clicking 'I Understand', you acknowledge this data processing."""
             state=tk.DISABLED
         )
         self.root.update()
+        
+        # Update time badge after session ends
+        self._update_time_badge()
         
         logger.info("Session stopped via GUI")
         
@@ -1023,7 +1378,7 @@ By clicking 'I Understand', you acknowledge this data processing."""
         Main detection loop running in a separate thread.
         
         Captures frames from camera and analyzes them using OpenAI Vision API.
-        Also handles unfocused alerts at configured thresholds.
+        Also handles unfocused alerts at configured thresholds and usage tracking.
         """
         try:
             detector = VisionDetector()
@@ -1042,6 +1397,8 @@ By clicking 'I Understand', you acknowledge this data processing."""
                     # Throttle detection to configured FPS
                     current_time = time.time()
                     time_since_detection = current_time - last_detection_time
+                    
+                    # Note: Time exhaustion is checked in _update_timer to stay in sync with display
                     
                     if time_since_detection >= (1.0 / config.DETECTION_FPS):
                         # Perform detection using OpenAI Vision
@@ -1106,6 +1463,88 @@ By clicking 'I Understand', you acknowledge this data processing."""
             logger.error(f"Detection loop error: {e}")
             self.root.after(0, lambda: self._show_detection_error(str(e)))
     
+    def _handle_time_exhausted(self):
+        """
+        Handle time exhaustion during a running session.
+        
+        Stops the session, generates PDF report, then shows lockout overlay.
+        """
+        # Capture stop time immediately
+        stop_time = datetime.now()
+        
+        # Stop the current session
+        if self.is_running:
+            self.should_stop.set()
+            self.is_running = False
+            
+            # End session with captured stop time
+            if self.session and self.session_started and self.session_start_time:
+                # Calculate and record session duration
+                session_duration = int((stop_time - self.session_start_time).total_seconds())
+                self.usage_limiter.record_usage(session_duration)
+                
+                self.session.end(stop_time)
+                self.usage_limiter.end_session()
+            
+            # Update UI to show generating status
+            self._update_status("idle", "Generating Reports...")
+            self.start_stop_btn.configure_button(
+                text="Generating...",
+                state=tk.DISABLED
+            )
+            self.root.update()
+            
+            logger.info("Session stopped due to time exhaustion - generating report")
+            
+            # Generate PDF report before lockout
+            self._generate_report_for_lockout()
+        
+        # Show lockout
+        self.is_locked = True
+        self._show_lockout_overlay()
+        
+        # Notify user (after report generation so they know report was saved)
+        messagebox.showwarning(
+            "Time Exhausted",
+            "Your trial time has run out.\n\n"
+            "Your session report has been saved to Downloads.\n\n"
+            "Click 'Request More Time' to unlock additional usage."
+        )
+    
+    def _generate_report_for_lockout(self):
+        """
+        Generate PDF report when session ends due to time exhaustion.
+        
+        Similar to _generate_report but without prompting to open the file.
+        """
+        if not self.session or not self.session_started:
+            self._reset_button_state()
+            return
+        
+        try:
+            # Compute statistics
+            stats = compute_statistics(
+                self.session.events,
+                self.session.get_duration()
+            )
+            
+            # Generate PDF (combined summary + logs)
+            report_path = generate_report(
+                stats,
+                self.session.session_id,
+                self.session.start_time,
+                self.session.end_time
+            )
+            
+            # Reset UI
+            self._reset_button_state()
+            
+            logger.info(f"Report generated (time exhausted): {report_path}")
+            
+        except Exception as e:
+            logger.error(f"Report generation failed during lockout: {e}")
+            self._reset_button_state()
+    
     def _update_detection_status(self, event_type: str):
         """
         Update the status display based on detection result.
@@ -1139,7 +1578,7 @@ By clicking 'I Understand', you acknowledge this data processing."""
             self.status_label.configure(text=text)
     
     def _update_timer(self):
-        """Update the timer display every second."""
+        """Update the timer display and usage badge every second."""
         if self.is_running and self.session_start_time:
             elapsed = datetime.now() - self.session_start_time
             total_seconds = int(elapsed.total_seconds())
@@ -1149,6 +1588,18 @@ By clicking 'I Understand', you acknowledge this data processing."""
             
             time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
             self.timer_label.configure(text=time_str)
+            
+            # Update usage badge in sync with timer (same clock)
+            if not self.is_locked:
+                self._update_time_badge()
+                
+                # Check if time exhausted (after badge update so "0s" shows first)
+                base_remaining = self.usage_limiter.get_remaining_seconds()
+                actual_remaining = base_remaining - total_seconds
+                if actual_remaining <= 0:
+                    logger.warning("Usage time exhausted during session")
+                    self._handle_time_exhausted()
+                    return  # Don't schedule next update, session is ending
         
         # Schedule next update
         self.root.after(1000, self._update_timer)

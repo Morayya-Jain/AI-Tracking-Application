@@ -65,3 +65,9 @@ ALERT_POPUP_DURATION = 10
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")  # Can override in .env: DEBUG, INFO, WARNING, ERROR
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
+# MVP Usage Limit Settings
+# Limits total usage time for trial/demo purposes
+MVP_LIMIT_SECONDS = 7200  # Initial time limit in seconds (default: 2 hours)
+MVP_EXTENSION_SECONDS = 7200  # Time added per password unlock in seconds (default: 2 hours)
+MVP_UNLOCK_PASSWORD = os.getenv("MVP_UNLOCK_PASSWORD", "")  # Password to unlock more time
+USAGE_DATA_FILE = BASE_DIR / "data" / "usage_data.json"

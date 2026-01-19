@@ -18,6 +18,8 @@ echo "OPENAI_API_KEY=your-key-here" > .env
 
 Replace `your-key-here` with your actual OpenAI API key from https://platform.openai.com/api-keys
 
+**Note:** This MVP has a **configurable trial limit** (see `config.py`). When time runs out, enter the unlock password to add more time.
+
 ## 3. Run It! (30 seconds)
 
 ```bash
@@ -51,6 +53,7 @@ Run with `python3 main.py --cli` for terminal-based tracking:
 ┌────────────────────────────────────┐
 │          GAVIN AI                  │
 │         Focus Tracker              │
+│          [1h 45m left]             │
 │                                    │
 │  ● Focused                         │
 │                                    │
@@ -59,10 +62,10 @@ Run with `python3 main.py --cli` for terminal-based tracking:
 │                                    │
 │    [ Stop Session ]                │
 │                                    │
-│    [ Generate Report ]             │
-│                                    │
 └────────────────────────────────────┘
 ```
+
+The purple badge shows your remaining trial time. Click it for details.
 
 ### CLI Mode
 

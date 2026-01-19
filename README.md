@@ -110,7 +110,8 @@ gavin_ai/
 ├── tracking/
 │   ├── __init__.py
 │   ├── session.py            # Session management & event logging
-│   └── analytics.py          # Event summarization & statistics
+│   ├── analytics.py          # Event summarization & statistics
+│   └── usage_limiter.py      # MVP usage time tracking & limits
 ├── reporting/
 │   ├── __init__.py
 │   └── pdf_report.py         # PDF generation
@@ -125,6 +126,25 @@ gavin_ai/
 Reports are saved to: ~/Downloads/
 ```
 
+## MVP Usage Limit
+
+This MVP includes a **configurable trial limit** (default: 2 hours) to manage API costs:
+
+- **Time Display**: A badge at the top shows your remaining time
+- **Click for Details**: Click the badge to see full usage statistics
+- **Time Exhausted**: When time runs out, a lockout screen appears
+- **Extend Time**: Click "Request More Time" and enter the password to add 2 more hours
+
+### Setting the Unlock Password
+
+Add the password to your `.env` file:
+
+```
+MVP_UNLOCK_PASSWORD=your-secret-password
+```
+
+Share this password with authorized users when they need more time.
+
 ## Configuration
 
 Edit `config.py` to customize:
@@ -132,6 +152,7 @@ Edit `config.py` to customize:
 - Camera settings (resolution, FPS)
 - OpenAI model selection
 - Grace periods for state changes
+- MVP usage limits (`MVP_LIMIT_SECONDS`, `MVP_EXTENSION_SECONDS`)
 
 ## Privacy & Data
 
