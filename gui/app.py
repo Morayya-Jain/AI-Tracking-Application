@@ -47,10 +47,15 @@ COLORS = {
     "status_away": "#FBBF24",       # Amber for away
     "status_gadget": "#F87171",     # Red for gadget distraction
     "status_idle": "#64748B",       # Gray for idle
+    "status_paused": "#94A3B8",     # Muted gray for paused
     "button_start": "#22C55E",      # Green start button
     "button_start_hover": "#16A34A", # Darker green on hover
     "button_stop": "#EF4444",       # Red stop button
     "button_stop_hover": "#DC2626", # Darker red on hover
+    "button_pause": "#64748B",      # Grey pause button
+    "button_pause_hover": "#475569", # Darker grey on hover
+    "button_resume": "#38BDF8",     # Sky blue resume button (same as unlock)
+    "button_resume_hover": "#0EA5E9", # Darker sky blue on hover
     "time_badge": "#8B5CF6",        # Purple for time remaining badge
     "time_badge_low": "#F97316",    # Orange when time is low
     "time_badge_expired": "#EF4444", # Red when time expired
@@ -656,9 +661,15 @@ class GavinGUI:
         self.is_running = False
         self.should_stop = threading.Event()
         self.detection_thread: Optional[threading.Thread] = None
-        self.current_status = "idle"  # idle, focused, away, gadget
+        self.current_status = "idle"  # idle, focused, away, gadget, paused
         self.session_start_time: Optional[datetime] = None
         self.session_started = False  # Track if first detection has occurred
+        
+        # Pause state tracking
+        self.is_paused = False  # Whether session is currently paused
+        self.pause_start_time: Optional[datetime] = None  # When current pause began
+        self.total_paused_seconds: float = 0.0  # Accumulated pause time in session (float for precision)
+        self.frozen_active_seconds: int = 0  # Frozen timer display value when paused
         
         # Unfocused alert tracking
         self.unfocused_start_time: Optional[float] = None
@@ -781,6 +792,7 @@ class GavinGUI:
             "focused": COLORS["status_focused"],
             "away": COLORS["status_away"],
             "gadget": COLORS["status_gadget"],
+            "paused": COLORS["status_paused"],
         }
         return color_map.get(self.current_status, COLORS["status_idle"])
     
@@ -916,6 +928,21 @@ class GavinGUI:
         button_frame = tk.Frame(self.main_frame, bg=COLORS["bg_dark"])
         button_frame.grid(row=7, column=0, sticky="ew")
         
+        # Pause/Resume Button (Rounded) - hidden initially, appears when session running
+        self.pause_btn = RoundedButton(
+            button_frame,
+            text="Pause Session",
+            command=self._toggle_pause,
+            bg_color=COLORS["button_pause"],
+            hover_color=COLORS["button_pause_hover"],
+            fg_color=COLORS["text_white"],
+            font=self.font_button,
+            corner_radius=10,
+            width=180,
+            height=52
+        )
+        # Hidden initially - will be shown when session starts
+        
         # Start/Stop Button (Rounded) - centered
         self.start_stop_btn = RoundedButton(
             button_frame,
@@ -932,16 +959,27 @@ class GavinGUI:
         self.start_stop_btn.pack()
         
     
-    def _draw_status_dot(self, color: str):
+    def _draw_status_dot(self, color: str, emoji: str = None):
         """
-        Draw the status indicator dot (circle).
+        Draw the status indicator dot (circle) or emoji.
         
         Args:
-            color: Hex color for the dot
+            color: Hex color for the dot (used if no emoji)
+            emoji: Optional emoji to show instead of the dot
         """
         self.status_dot.delete("all")
-        # Draw a perfect circle
-        self.status_dot.create_oval(1, 1, 13, 13, fill=color, outline="")
+        
+        if emoji:
+            # Show emoji instead of dot
+            self.status_dot.create_text(
+                7, 7,  # Center of the 14x14 canvas
+                text=emoji,
+                font=("SF Pro Display", 10),
+                anchor="center"
+            )
+        else:
+            # Draw a perfect circle
+            self.status_dot.create_oval(1, 1, 13, 13, fill=color, outline="")
     
     def _check_privacy(self):
         """Check if privacy notice has been accepted, show if not."""
@@ -1024,14 +1062,21 @@ By clicking 'I Understand', you acknowledge this data processing."""
         # Get base remaining time from usage limiter
         base_remaining = self.usage_limiter.get_remaining_seconds()
         
-        # If session is running, subtract current session's elapsed time
+        # If session is running, subtract current session's elapsed active time
         if self.is_running and self.session_started and self.session_start_time:
-            session_elapsed = int((datetime.now() - self.session_start_time).total_seconds())
-            remaining = max(0, base_remaining - session_elapsed)
+            # When paused, use frozen value - don't recalculate
+            if self.is_paused:
+                active_elapsed = self.frozen_active_seconds
+            else:
+                # Calculate active time (total elapsed minus all paused time)
+                elapsed = (datetime.now() - self.session_start_time).total_seconds()
+                active_elapsed = int(elapsed - self.total_paused_seconds)
+            
+            remaining = max(0, base_remaining - active_elapsed)
         else:
             remaining = base_remaining
         
-        time_text = self.usage_limiter.format_time(remaining)
+        time_text = self.usage_limiter.format_time(int(remaining))
         
         # Determine badge color based on remaining time
         if remaining <= 0:
@@ -1147,11 +1192,14 @@ By clicking 'I Understand', you acknowledge this data processing."""
         dialog.configure(bg=COLORS["bg_dark"])
         dialog.resizable(False, False)
         
-        # Size and position
+        # Size and position - center on screen (like main Gavin UI)
         dialog_width = 350
         dialog_height = 200
-        x = self.root.winfo_x() + (self.root.winfo_width() - dialog_width) // 2
-        y = self.root.winfo_y() + (self.root.winfo_height() - dialog_height) // 2
+        dialog.update_idletasks()
+        screen_width = dialog.winfo_screenwidth()
+        screen_height = dialog.winfo_screenheight()
+        x = (screen_width - dialog_width) // 2
+        y = (screen_height - dialog_height) // 2
         dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
         
         # Make modal
@@ -1277,6 +1325,102 @@ By clicking 'I Understand', you acknowledge this data processing."""
         else:
             self._stop_session()
     
+    def _toggle_pause(self):
+        """Toggle between pausing and resuming a session."""
+        if not self.is_paused:
+            self._pause_session()
+        else:
+            self._resume_session()
+    
+    def _pause_session(self):
+        """
+        Pause the current session INSTANTLY.
+        
+        Logs a pause event, freezes the timer at the exact moment, and stops API calls.
+        Uses int() truncation to floor the value (32.9s becomes 32s, not 33s).
+        Forces immediate UI update to prevent any visual lag.
+        """
+        if not self.is_running or self.is_paused:
+            return
+        
+        # CRITICAL: Set is_paused FIRST to prevent any timer updates from racing
+        self.is_paused = True
+        
+        # Capture exact pause moment
+        self.pause_start_time = datetime.now()
+        
+        # Calculate and freeze the active seconds at this exact moment
+        # int() truncates (floors) - so 32.9s becomes 32s, not 33s
+        if self.session_start_time:
+            elapsed = (self.pause_start_time - self.session_start_time).total_seconds()
+            self.frozen_active_seconds = int(elapsed - self.total_paused_seconds)
+        
+        # Log the pause event in the session
+        if self.session and self.session_started:
+            self.session.log_event(config.EVENT_PAUSED)
+        
+        # Reset unfocused alert tracking (shouldn't alert while paused)
+        self.unfocused_start_time = None
+        self.alerts_played = 0
+        
+        # Update UI instantly with frozen value
+        self._update_status("paused", "Paused")
+        self.pause_btn.configure_button(
+            text="Resume Session",
+            bg_color=COLORS["button_resume"],
+            hover_color=COLORS["button_resume_hover"]
+        )
+        
+        # Display frozen timer value immediately
+        hours = self.frozen_active_seconds // 3600
+        minutes = (self.frozen_active_seconds % 3600) // 60
+        secs = self.frozen_active_seconds % 60
+        self.timer_label.configure(text=f"{hours:02d}:{minutes:02d}:{secs:02d}")
+        
+        # FORCE IMMEDIATE UI REFRESH - ensures display updates before any other events
+        self.root.update_idletasks()
+        
+        # Update usage badge
+        self._update_time_badge()
+        
+        logger.info("Session paused")
+        print(f"⏸ Session paused ({self.pause_start_time.strftime('%I:%M %p')})")
+    
+    def _resume_session(self):
+        """
+        Resume the paused session.
+        
+        Calculates pause duration with full precision, logs return to present state.
+        """
+        if not self.is_running or not self.is_paused:
+            return
+        
+        resume_time = datetime.now()
+        
+        # Calculate pause duration with full precision (no rounding)
+        if self.pause_start_time:
+            pause_duration = (resume_time - self.pause_start_time).total_seconds()
+            self.total_paused_seconds += pause_duration
+        
+        self.is_paused = False
+        self.pause_start_time = None
+        self.frozen_active_seconds = 0  # Clear frozen value
+        
+        # Log return to present state in the session
+        if self.session and self.session_started:
+            self.session.log_event(config.EVENT_PRESENT)
+        
+        # Update UI
+        self._update_status("focused", "Focused")
+        self.pause_btn.configure_button(
+            text="Pause Session",
+            bg_color=COLORS["button_pause"],
+            hover_color=COLORS["button_pause_hover"]
+        )
+        
+        logger.info("Session resumed")
+        print(f"▶ Session resumed ({resume_time.strftime('%I:%M %p')})")
+    
     def _start_session(self):
         """Start a new focus session."""
         # Check if locked due to usage limit
@@ -1311,12 +1455,28 @@ By clicking 'I Understand', you acknowledge this data processing."""
         self.is_running = True
         self.should_stop.clear()
         
+        # Reset pause state for new session
+        self.is_paused = False
+        self.pause_start_time = None
+        self.total_paused_seconds = 0.0
+        self.frozen_active_seconds = 0
+        
         # Reset unfocused alert tracking for new session
         self.unfocused_start_time = None
         self.alerts_played = 0
         
-        # Update UI
-        self._update_status("focused", "Booting Up...")
+        # Update UI - show both buttons (pause on top, stop below)
+        self._update_status("focused", "Booting Up...", emoji="⚡️")
+        
+        # Repack buttons in correct order: pause on top, stop below with gap
+        self.start_stop_btn.pack_forget()  # Remove stop button temporarily
+        self.pause_btn.pack(pady=(0, 15))  # Pause button first with gap below
+        self.pause_btn.configure_button(
+            text="Pause Session",
+            bg_color=COLORS["button_pause"],
+            hover_color=COLORS["button_pause_hover"]
+        )
+        self.start_stop_btn.pack()  # Stop button below
         self.start_stop_btn.configure_button(
             text="Stop Session",
             bg_color=COLORS["button_stop"],
@@ -1333,12 +1493,19 @@ By clicking 'I Understand', you acknowledge this data processing."""
         logger.info("Session started via GUI")
     
     def _stop_session(self):
-        """Stop the current session and auto-generate report."""
+        """Stop the current session INSTANTLY and auto-generate report."""
         if not self.is_running:
             return
         
         # Capture stop time IMMEDIATELY when user clicks stop
         stop_time = datetime.now()
+        
+        # If paused, finalize the pause duration before stopping (full precision)
+        if self.is_paused and self.pause_start_time:
+            pause_duration = (stop_time - self.pause_start_time).total_seconds()
+            self.total_paused_seconds += pause_duration
+            self.is_paused = False
+            self.pause_start_time = None
         
         # Signal thread to stop
         self.should_stop.set()
@@ -1350,12 +1517,17 @@ By clicking 'I Understand', you acknowledge this data processing."""
         
         # End session (only if it was actually started after first detection)
         if self.session and self.session_started and self.session_start_time:
-            # Calculate and record session duration
-            session_duration = int((stop_time - self.session_start_time).total_seconds())
-            self.usage_limiter.record_usage(session_duration)
+            # Calculate and record session duration (excluding paused time)
+            # Use full precision until final int conversion for usage tracking
+            total_elapsed = (stop_time - self.session_start_time).total_seconds()
+            active_duration = int(total_elapsed - self.total_paused_seconds)
+            self.usage_limiter.record_usage(active_duration)
             
             self.session.end(stop_time)  # Use the captured stop time
             self.usage_limiter.end_session()
+        
+        # Hide pause button when session stops
+        self.pause_btn.pack_forget()
         
         # Update UI to show generating status
         self._update_status("idle", "Generating Reports...")
@@ -1394,6 +1566,11 @@ By clicking 'I Understand', you acknowledge this data processing."""
                     if self.should_stop.is_set():
                         break
                     
+                    # Skip all detection when paused (no API calls)
+                    if self.is_paused:
+                        time.sleep(0.1)  # Sleep longer when paused to reduce CPU
+                        continue
+                    
                     # Throttle detection to configured FPS
                     current_time = time.time()
                     time_since_detection = current_time - last_detection_time
@@ -1408,6 +1585,10 @@ By clicking 'I Understand', you acknowledge this data processing."""
                         # User may have clicked Stop during this time
                         if self.should_stop.is_set():
                             break
+                        
+                        # Also check if paused during detection (user may have paused during API call)
+                        if self.is_paused:
+                            continue
                         
                         # Start session on first successful detection (eliminates bootup time)
                         if not self.session_started:
@@ -1474,17 +1655,29 @@ By clicking 'I Understand', you acknowledge this data processing."""
         
         # Stop the current session
         if self.is_running:
+            # If paused, finalize the pause duration before stopping (full precision)
+            if self.is_paused and self.pause_start_time:
+                pause_duration = (stop_time - self.pause_start_time).total_seconds()
+                self.total_paused_seconds += pause_duration
+                self.is_paused = False
+                self.pause_start_time = None
+            
             self.should_stop.set()
             self.is_running = False
             
             # End session with captured stop time
             if self.session and self.session_started and self.session_start_time:
-                # Calculate and record session duration
-                session_duration = int((stop_time - self.session_start_time).total_seconds())
-                self.usage_limiter.record_usage(session_duration)
+                # Calculate and record session duration (excluding paused time)
+                # Use full precision until final int conversion for usage tracking
+                total_elapsed = (stop_time - self.session_start_time).total_seconds()
+                active_duration = int(total_elapsed - self.total_paused_seconds)
+                self.usage_limiter.record_usage(active_duration)
                 
                 self.session.end(stop_time)
                 self.usage_limiter.end_session()
+            
+            # Hide pause button when session stops
+            self.pause_btn.pack_forget()
             
             # Update UI to show generating status
             self._update_status("idle", "Generating Reports...")
@@ -1563,46 +1756,66 @@ By clicking 'I Understand', you acknowledge this data processing."""
         # Schedule UI update on main thread
         self.root.after(0, lambda: self._update_status(status, text))
     
-    def _update_status(self, status: str, text: str):
+    def _update_status(self, status: str, text: str, emoji: str = None):
         """
         Update the status indicator and label.
         
         Args:
-            status: Status type (idle, focused, away, gadget)
+            status: Status type (idle, focused, away, gadget, paused)
             text: Display text
+            emoji: Optional emoji to show instead of the colored dot
         """
         with self.ui_lock:
             self.current_status = status
             color = self._get_current_status_color()
-            self._draw_status_dot(color)
+            self._draw_status_dot(color, emoji=emoji)
             self.status_label.configure(text=text)
     
     def _update_timer(self):
-        """Update the timer display and usage badge every second."""
+        """
+        Update the timer display frequently for instant pause feel.
+        
+        Timer updates every 100ms for smooth display and instant pause response.
+        Usage badge and other expensive operations update every second.
+        """
         if self.is_running and self.session_start_time:
-            elapsed = datetime.now() - self.session_start_time
-            total_seconds = int(elapsed.total_seconds())
-            hours = total_seconds // 3600
-            minutes = (total_seconds % 3600) // 60
-            seconds = total_seconds % 60
+            # When paused, use frozen value - don't recalculate
+            if self.is_paused:
+                active_seconds = self.frozen_active_seconds
+            else:
+                # Calculate active time (total elapsed minus all paused time)
+                elapsed = (datetime.now() - self.session_start_time).total_seconds()
+                active_seconds = int(elapsed - self.total_paused_seconds)
             
-            time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+            hours = active_seconds // 3600
+            minutes = (active_seconds % 3600) // 60
+            secs = active_seconds % 60
+            
+            time_str = f"{hours:02d}:{minutes:02d}:{secs:02d}"
             self.timer_label.configure(text=time_str)
             
-            # Update usage badge in sync with timer (same clock)
-            if not self.is_locked:
-                self._update_time_badge()
+            # Only check usage limits and update badge every second (not every 100ms)
+            # This reduces overhead while keeping timer display smooth
+            if not self.is_paused and not self.is_locked:
+                # Track when we last did expensive operations
+                current_second = active_seconds
+                if not hasattr(self, '_last_usage_check_second'):
+                    self._last_usage_check_second = -1
                 
-                # Check if time exhausted (after badge update so "0s" shows first)
-                base_remaining = self.usage_limiter.get_remaining_seconds()
-                actual_remaining = base_remaining - total_seconds
-                if actual_remaining <= 0:
-                    logger.warning("Usage time exhausted during session")
-                    self._handle_time_exhausted()
-                    return  # Don't schedule next update, session is ending
+                if current_second != self._last_usage_check_second:
+                    self._last_usage_check_second = current_second
+                    self._update_time_badge()
+                    
+                    # Check if time exhausted
+                    base_remaining = self.usage_limiter.get_remaining_seconds()
+                    actual_remaining = base_remaining - active_seconds
+                    if actual_remaining <= 0:
+                        logger.warning("Usage time exhausted during session")
+                        self._handle_time_exhausted()
+                        return  # Don't schedule next update, session is ending
         
-        # Schedule next update
-        self.root.after(1000, self._update_timer)
+        # Schedule next update at 100ms for smooth display and instant pause response
+        self.root.after(100, self._update_timer)
     
     def _play_unfocused_alert(self):
         """
@@ -1817,13 +2030,32 @@ By clicking 'I Understand', you acknowledge this data processing."""
             )
             if not result:
                 return
-            # Stop session (will generate report)
+            
+            # Capture stop time immediately
+            stop_time = datetime.now()
+            
+            # If paused, finalize the pause duration before stopping
+            if self.is_paused and self.pause_start_time:
+                pause_duration = (stop_time - self.pause_start_time).total_seconds()
+                self.total_paused_seconds += pause_duration
+                self.is_paused = False
+                self.pause_start_time = None
+            
+            # Stop session
             self.should_stop.set()
             self.is_running = False
             if self.detection_thread and self.detection_thread.is_alive():
                 self.detection_thread.join(timeout=2.0)
-            if self.session:
-                self.session.end()
+            
+            # End session and record usage with correct active duration
+            if self.session and self.session_started and self.session_start_time:
+                total_elapsed = (stop_time - self.session_start_time).total_seconds()
+                active_duration = int(total_elapsed - self.total_paused_seconds)
+                self.usage_limiter.record_usage(active_duration)
+                self.session.end(stop_time)
+                self.usage_limiter.end_session()
+            elif self.session:
+                self.session.end(stop_time)
         
         self.root.destroy()
     

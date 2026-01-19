@@ -9,27 +9,31 @@ def compute_statistics(events: List[Dict[str, Any]], total_duration: float) -> D
     """
     Compute statistics from a list of session events.
     
+    All calculations use floats for full precision.
+    Truncation to int happens ONLY at final PDF display time.
+    
+    To ensure summary matches sum of displayed logs, we sum int(each duration).
+    This way: summary = sum of what each log entry displays.
+    
     Args:
         events: List of event dictionaries with type, start, end, and duration
-        total_duration: Total session duration in seconds
+        total_duration: Total session duration in seconds (for reference only)
         
     Returns:
-        Dictionary containing:
-        - total_minutes: Total session duration
-        - focused_minutes: Time present at desk
-        - away_minutes: Time away from desk
-        - gadget_minutes: Time using other gadgets (phone, tablet, controller, etc.)
-        - present_minutes: Time present at desk
-        - events: Consolidated event timeline
+        Dictionary containing statistics (seconds as floats for precision)
     """
-    # Initialize counters
+    # Initialize counters as floats
     present_seconds = 0.0
     away_seconds = 0.0
     gadget_seconds = 0.0
+    paused_seconds = 0.0
     
     # Sum up durations by event type
+    # Truncate each to int before summing so summary = sum of displayed log values
     for event in events:
-        duration = event.get("duration_seconds", 0)
+        raw_duration = float(event.get("duration_seconds", 0))
+        # Truncate to match what will be displayed in logs
+        duration = float(int(raw_duration))
         event_type = event.get("type")
         
         if event_type == config.EVENT_PRESENT:
@@ -38,26 +42,33 @@ def compute_statistics(events: List[Dict[str, Any]], total_duration: float) -> D
             away_seconds += duration
         elif event_type == config.EVENT_GADGET_SUSPECTED:
             gadget_seconds += duration
+        elif event_type == config.EVENT_PAUSED:
+            paused_seconds += duration
     
-    # Convert to minutes for readability
-    total_minutes = total_duration / 60
-    present_minutes = present_seconds / 60
-    away_minutes = away_seconds / 60
-    gadget_minutes = gadget_seconds / 60
+    # Calculate derived values
+    active_seconds = present_seconds + away_seconds + gadget_seconds
+    distracted_seconds = away_seconds + gadget_seconds
+    total_seconds = active_seconds + paused_seconds
     
-    # Focused time = present time (gadget is tracked separately, not subtracted)
-    # Total should equal: present + away + gadget
-    focused_minutes = present_minutes
-    
-    # Consolidate events for timeline
+    # Consolidate events for timeline (keeps float precision)
     consolidated = consolidate_events(events)
     
+    # Return float seconds - truncation happens at PDF display time
     return {
-        "total_minutes": round(total_minutes, 2),
-        "focused_minutes": round(focused_minutes, 2),
-        "away_minutes": round(away_minutes, 2),
-        "gadget_minutes": round(gadget_minutes, 2),
-        "present_minutes": round(present_minutes, 2),
+        "total_seconds": total_seconds,
+        "present_seconds": present_seconds,
+        "away_seconds": away_seconds,
+        "gadget_seconds": gadget_seconds,
+        "paused_seconds": paused_seconds,
+        "active_seconds": active_seconds,
+        "distracted_seconds": distracted_seconds,
+        # Legacy minute values for backward compatibility
+        "total_minutes": total_seconds / 60.0,
+        "focused_minutes": present_seconds / 60.0,
+        "away_minutes": away_seconds / 60.0,
+        "gadget_minutes": gadget_seconds / 60.0,
+        "paused_minutes": paused_seconds / 60.0,
+        "present_minutes": present_seconds / 60.0,
         "events": consolidated
     }
 
@@ -68,6 +79,10 @@ def consolidate_events(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     
     This merges consecutive events of the same type to reduce noise
     and creates a cleaner timeline view.
+    
+    Keeps float precision - truncation happens at PDF display time.
+    Truncates each event to int BEFORE summing so consolidated totals
+    match what individual displayed events would sum to.
     
     Args:
         events: List of raw event dictionaries
@@ -85,7 +100,9 @@ def consolidate_events(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         event_type = event.get("type")
         start_time = event.get("start")
         end_time = event.get("end")
-        duration = event.get("duration_seconds", 0)
+        raw_duration = float(event.get("duration_seconds", 0))
+        # Truncate to int then back to float - ensures sum matches displayed values
+        duration = float(int(raw_duration))
         
         # If this is the same type as current, extend the current event
         if current_event and current_event["type"] == event_type:
@@ -115,21 +132,24 @@ def _format_event(event: Dict[str, Any]) -> Dict[str, Any]:
     """
     Format an event for display with human-readable times and durations.
     
+    Keeps float precision - truncation to int happens at PDF display time.
+    
     Args:
         event: Event dictionary with start, end, type, and duration
         
     Returns:
-        Formatted event dictionary
+        Formatted event dictionary with duration_seconds as float
     """
     start = datetime.fromisoformat(event["start"])
     end = datetime.fromisoformat(event["end"])
-    duration_minutes = event["duration_seconds"] / 60
+    duration_seconds = float(event["duration_seconds"])
     
     # Create readable event type labels
     type_labels = {
         config.EVENT_PRESENT: "Focused",
         config.EVENT_AWAY: "Away",
-        config.EVENT_GADGET_SUSPECTED: "Gadget Usage"
+        config.EVENT_GADGET_SUSPECTED: "Gadget Usage",
+        config.EVENT_PAUSED: "Paused"
     }
     
     return {
@@ -137,7 +157,8 @@ def _format_event(event: Dict[str, Any]) -> Dict[str, Any]:
         "type_label": type_labels.get(event["type"], event["type"]),
         "start": start.strftime("%I:%M %p"),
         "end": end.strftime("%I:%M %p"),
-        "duration_minutes": round(duration_minutes, 2)
+        "duration_seconds": duration_seconds,  # Float precision
+        "duration_minutes": duration_seconds / 60.0  # For backward compatibility
     }
 
 
@@ -145,18 +166,35 @@ def get_focus_percentage(stats: Dict[str, Any]) -> float:
     """
     Calculate focus percentage from statistics.
     
+    Focus rate = present / active_time, where active_time = present + away + gadget.
+    Paused time is completely excluded from both numerator and denominator.
+    This ensures the focus rate is always between 0% and 100%.
+    
     Args:
         stats: Statistics dictionary from compute_statistics
         
     Returns:
-        Focus percentage (0-100)
+        Focus percentage (0-100), never exceeds 100%
     """
-    total = stats.get("total_minutes", 0)
-    if total == 0:
+    # Use float seconds from stats
+    if "active_seconds" in stats:
+        active_time = float(stats["active_seconds"])
+        present_time = float(stats["present_seconds"])
+    else:
+        # Legacy fallback
+        active_time = (stats.get("present_minutes", 0) + 
+                       stats.get("away_minutes", 0) + 
+                       stats.get("gadget_minutes", 0)) * 60.0
+        present_time = stats.get("present_minutes", 0) * 60.0
+    
+    if active_time <= 0:
         return 0.0
     
-    focused = stats.get("focused_minutes", 0)
-    return round((focused / total) * 100, 1)
+    # Focus rate = present / active (guaranteed 0-100%)
+    focus_pct = (present_time / active_time) * 100.0
+    
+    # Clamp to 0-100 for safety
+    return min(100.0, max(0.0, focus_pct))
 
 
 def generate_summary_text(stats: Dict[str, Any]) -> str:
@@ -164,6 +202,7 @@ def generate_summary_text(stats: Dict[str, Any]) -> str:
     Generate a simple text summary of the session.
     
     This is a fallback summary in case OpenAI API is not available.
+    Uses raw seconds and converts to display format at the end.
     
     Args:
         stats: Statistics dictionary from compute_statistics
@@ -171,28 +210,48 @@ def generate_summary_text(stats: Dict[str, Any]) -> str:
     Returns:
         Human-readable summary string
     """
-    total = stats["total_minutes"]
-    focused = stats["focused_minutes"]
-    away = stats["away_minutes"]
-    gadget = stats["gadget_minutes"]
+    # Get values in seconds (new format) or convert from minutes (legacy)
+    if "active_seconds" in stats:
+        active_secs = stats["active_seconds"]
+        present_secs = stats["present_seconds"]
+        away_secs = stats["away_seconds"]
+        gadget_secs = stats["gadget_seconds"]
+        paused_secs = stats["paused_seconds"]
+    else:
+        present_secs = stats.get("present_minutes", 0) * 60
+        away_secs = stats.get("away_minutes", 0) * 60
+        gadget_secs = stats.get("gadget_minutes", 0) * 60
+        paused_secs = stats.get("paused_minutes", 0) * 60
+        active_secs = present_secs + away_secs + gadget_secs
+    
     focus_pct = get_focus_percentage(stats)
     
-    # Convert minutes to hours/minutes format
-    hours = int(total // 60)
-    minutes = int(total % 60)
+    # Format active time as duration
+    total_secs = int(active_secs + paused_secs)
+    hours = total_secs // 3600
+    minutes = (total_secs % 3600) // 60
     
     if hours > 0:
         duration_str = f"{hours}h {minutes}m"
     else:
         duration_str = f"{minutes}m"
     
+    # Format individual times
+    def fmt_mins(secs):
+        return f"{secs / 60:.1f}"
+    
     summary = f"""Session Summary:
 Total Duration: {duration_str}
-Focused Time: {focused:.1f} minutes ({focus_pct}%)
-Away Time: {away:.1f} minutes
-Gadget Usage: {gadget:.1f} minutes
-
+Focused Time: {fmt_mins(present_secs)} minutes ({focus_pct:.1f}%)
+Away Time: {fmt_mins(away_secs)} minutes
+Gadget Usage: {fmt_mins(gadget_secs)} minutes
 """
+    
+    # Only show paused time if > 0
+    if paused_secs > 0:
+        summary += f"Paused Time: {fmt_mins(paused_secs)} minutes\n"
+    
+    summary += "\n"
     
     # Add simple observation
     if focus_pct >= 80:

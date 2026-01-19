@@ -123,19 +123,21 @@ def _create_later_page_template(canvas_obj, doc):
     _add_header(canvas_obj, doc)
 
 
-def _format_time(minutes: float) -> str:
+def _format_time_seconds(seconds: float) -> str:
     """
-    Format time in a human-readable way.
+    Format time in seconds to human-readable display.
+    
+    Truncates (floors) to integer seconds at the end for consistent display.
+    This is the ONLY place where float->int conversion should happen for time.
     
     Args:
-        minutes: Time in minutes (can be fractional)
+        seconds: Time in seconds as float
         
     Returns:
         Formatted string like "1m 30s" or "45s" or "2h 15m"
-        Values less than 1 minute show in seconds only
-        Omits .0 decimals (e.g., "45.0%" becomes "45%")
     """
-    total_seconds = int(minutes * 60)
+    # Truncate to int at display time only (floor, not round)
+    total_seconds = int(seconds)
     
     # Less than 1 minute - show seconds only
     if total_seconds < 60:
@@ -149,13 +151,30 @@ def _format_time(minutes: float) -> str:
     if hours > 0:
         if secs > 0:
             return f"{hours}h {mins}m {secs}s"
-        else:
+        elif mins > 0:
             return f"{hours}h {mins}m"
+        else:
+            return f"{hours}h"
     else:
         if secs > 0:
             return f"{mins}m {secs}s"
         else:
             return f"{mins}m"
+
+
+def _format_time(minutes: float) -> str:
+    """
+    Format time in minutes to human-readable display.
+    
+    Legacy wrapper that converts minutes to seconds and calls _format_time_seconds.
+    
+    Args:
+        minutes: Time in minutes as float
+        
+    Returns:
+        Formatted string like "1m 30s" or "45s" or "2h 15m"
+    """
+    return _format_time_seconds(minutes * 60.0)
 
 
 # Focus category definitions with colors matching the gauge
@@ -906,32 +925,67 @@ def generate_report(
     # Statistics section
     story.append(Paragraph("Summary Statistics", heading_style))
     
-    # Calculate focus percentage (present time / total time)
-    focus_pct = (stats['present_minutes'] / stats['total_minutes'] * 100) if stats['total_minutes'] > 0 else 0
-    focus_pct_str = f"{int(focus_pct)}%" if focus_pct == int(focus_pct) else f"{focus_pct:.1f}%"
+    # Get raw values in seconds (floats for precision)
+    # Use new fields if available, fall back to minutes * 60 for backward compat
+    if 'present_seconds' in stats:
+        present_secs = stats['present_seconds']
+        away_secs = stats['away_seconds']
+        gadget_secs = stats['gadget_seconds']
+        paused_secs = stats['paused_seconds']
+        active_secs = stats['active_seconds']  # = present + away + gadget
+    else:
+        # Legacy fallback
+        present_secs = stats.get('present_minutes', 0) * 60.0
+        away_secs = stats.get('away_minutes', 0) * 60.0
+        gadget_secs = stats.get('gadget_minutes', 0) * 60.0
+        paused_secs = stats.get('paused_minutes', 0) * 60.0
+        active_secs = present_secs + away_secs + gadget_secs
+    
+    # Calculate focus percentage: present / active_time
+    # This is guaranteed to be 0-100% since active_time = present + away + gadget
+    if active_secs > 0:
+        focus_pct = (present_secs / active_secs) * 100.0
+    else:
+        focus_pct = 0.0
+    
+    # Clamp to 0-100 for safety (floating point edge cases)
+    focus_pct = min(100.0, max(0.0, focus_pct))
+    
+    # Format focus percentage - use int if it's a whole number
+    focus_pct_int = int(focus_pct)
+    if abs(focus_pct - focus_pct_int) < 0.05:  # Close enough to whole number
+        focus_pct_str = f"{focus_pct_int}%"
+    else:
+        focus_pct_str = f"{focus_pct:.1f}%"
     
     # Build table data, only including rows with non-zero values
+    # Use _format_time_seconds for display (values are already truncated ints from analytics)
     stats_data = [['Category', 'Duration']]
     
     # Track which rows we add for color coding later
     row_types = []
     
-    # Add rows conditionally based on non-zero values
-    if stats['present_minutes'] > 0:
-        stats_data.append(['Present at Desk', _format_time(stats['present_minutes'])])
+    # Add rows only if they have at least 1 second (already truncated to int)
+    if present_secs > 0:
+        stats_data.append(['Present at Desk', _format_time_seconds(present_secs)])
         row_types.append('present')
     
-    if stats['away_minutes'] > 0:
-        stats_data.append(['Away from Desk', _format_time(stats['away_minutes'])])
+    if away_secs > 0:
+        stats_data.append(['Away from Desk', _format_time_seconds(away_secs)])
         row_types.append('away')
     
-    if stats['gadget_minutes'] > 0:
-        stats_data.append(['Gadget Usage', _format_time(stats['gadget_minutes'])])
+    if gadget_secs > 0:
+        stats_data.append(['Gadget Usage', _format_time_seconds(gadget_secs)])
         row_types.append('gadget')
     
-    # Always add Total Time and Focus Rate
-    stats_data.append(['Total Time', _format_time(stats['total_minutes'])])
-    row_types.append('total')
+    # Add paused time row only if > 0 (will be styled in italic grey)
+    if paused_secs > 0:
+        stats_data.append(['Paused', _format_time_seconds(paused_secs)])
+        row_types.append('paused')
+    
+    # Always add Active Time (= present + away + gadget) and Focus Rate
+    stats_data.append(['Active Time', _format_time_seconds(active_secs)])
+    row_types.append('active')
     stats_data.append(['Focus Rate', focus_pct_str])
     row_types.append('focus')
     
@@ -965,8 +1019,11 @@ def generate_report(
             table_style.append(('TEXTCOLOR', (0, i), (0, i), colors.HexColor('#1B7A3D')))
         elif row_type in ['away', 'gadget']:
             table_style.append(('TEXTCOLOR', (0, i), (0, i), colors.HexColor('#C62828')))
-        elif row_type in ['total', 'focus']:
-            # Make Total Time and Focus Rate bold in both columns
+        elif row_type == 'paused':
+            # Paused row: grey text (normal font, not italic)
+            table_style.append(('TEXTCOLOR', (0, i), (1, i), colors.HexColor('#7F8C8D')))
+        elif row_type in ['active', 'focus']:
+            # Make Active Time and Focus Rate bold in both columns
             table_style.append(('FONTNAME', (0, i), (0, i), 'Times-Bold'))
             table_style.append(('FONTNAME', (1, i), (1, i), 'Times-Bold'))
     
@@ -999,17 +1056,24 @@ def generate_report(
     events = stats.get('events', [])
     
     if events:
-        # Filter out events with 0 duration
-        non_zero_events = [e for e in events if e.get('duration_minutes', 0) > 0]
+        # Filter out events with 0 duration (durations are already truncated to int)
+        def get_duration_seconds(e):
+            if 'duration_seconds' in e:
+                return e['duration_seconds']
+            return int(e.get('duration_minutes', 0) * 60)
+        
+        # Only show events with at least 1 second
+        non_zero_events = [e for e in events if get_duration_seconds(e) > 0]
         
         if non_zero_events:
             # Build table with ALL events (no limit)
             timeline_data = [['Time', 'Activity', 'Duration']]
             for event in non_zero_events:
+                duration_secs = get_duration_seconds(event)
                 timeline_data.append([
                     f"{event['start']} - {event['end']}",
                     event['type_label'],
-                    _format_time(event['duration_minutes'])
+                    _format_time_seconds(duration_secs)
                 ])
             
             timeline_table = Table(timeline_data, colWidths=[2.4 * inch, 2.2 * inch, 1.4 * inch])
@@ -1035,13 +1099,18 @@ def generate_report(
                 ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#2C3E50')),
             ]
             
-            # Add color coding for Activity column based on event type
+            # Add styling for each event type
             for i, event in enumerate(non_zero_events, 1):
                 event_type = event.get('type', '')
                 if event_type == 'present':
+                    # Focused row: normal font, green text for activity column
                     logs_table_style.append(('TEXTCOLOR', (1, i), (1, i), colors.HexColor('#1B7A3D')))
                 elif event_type in ['away', 'gadget_suspected']:
                     logs_table_style.append(('TEXTCOLOR', (1, i), (1, i), colors.HexColor('#C62828')))
+                elif event_type == 'paused':
+                    # Paused row: italic grey text for entire row
+                    logs_table_style.append(('FONTNAME', (0, i), (-1, i), 'Times-Italic'))
+                    logs_table_style.append(('TEXTCOLOR', (0, i), (-1, i), colors.HexColor('#7F8C8D')))
             
             timeline_table.setStyle(TableStyle(logs_table_style))
             story.append(timeline_table)

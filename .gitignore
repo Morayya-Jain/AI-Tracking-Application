@@ -39,6 +39,7 @@ ENV/
 data/sessions
 data/.privacy_accepted
 data/.gavin_instance.lock
+data/usage_data.json
 reports/
 *.log
 

@@ -44,6 +44,7 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 EVENT_PRESENT = "present"
 EVENT_AWAY = "away"
 EVENT_GADGET_SUSPECTED = "gadget_suspected"
+EVENT_PAUSED = "paused"  # User manually paused the session
 
 # Unfocused alert settings
 # Alert plays at each of these thresholds (in seconds) when user is unfocused
