@@ -230,12 +230,63 @@ def _get_focus_category(focus_pct: float) -> Tuple[str, str, str]:
         return ('needs_focus', cat['label'], cat['color'])
 
 
-def _load_focus_statements() -> Dict[str, List[str]]:
+def _get_dominant_distraction_type(stats: Optional[Dict[str, Any]] = None) -> str:
+    """
+    Determine which distraction type was most dominant by percentage.
+    
+    Analyzes session statistics to find whether phone/gadget usage, being away
+    from desk, or screen distractions (wrong apps/websites) was the primary
+    distraction during the session.
+    
+    Args:
+        stats: Statistics dictionary from compute_statistics()
+        
+    Returns:
+        One of: 'phone', 'away', 'screen', 'general'
+        Returns 'general' if no distractions, stats unavailable, or tie.
+    """
+    if not stats:
+        return 'general'
+    
+    gadget_secs = stats.get('gadget_seconds', 0)
+    away_secs = stats.get('away_seconds', 0)
+    screen_secs = stats.get('screen_distraction_seconds', 0)
+    
+    total_distraction = gadget_secs + away_secs + screen_secs
+    
+    # No distractions at all - use general statements
+    if total_distraction == 0:
+        return 'general'
+    
+    # Calculate percentages
+    gadget_pct = (gadget_secs / total_distraction) * 100
+    away_pct = (away_secs / total_distraction) * 100
+    screen_pct = (screen_secs / total_distraction) * 100
+    
+    # Find the maximum percentage
+    max_pct = max(gadget_pct, away_pct, screen_pct)
+    
+    # If the dominant one is less than 40%, it's too close - use general
+    # This handles cases where distractions are roughly evenly split
+    if max_pct < 40:
+        return 'general'
+    
+    # Return the dominant type
+    if gadget_pct == max_pct:
+        return 'phone'
+    elif away_pct == max_pct:
+        return 'away'
+    else:
+        return 'screen'
+
+
+def _load_focus_statements() -> Dict[str, Any]:
     """
     Load pre-computed focus statements from JSON file.
     
     Returns:
-        Dictionary with category keys and lists of statement templates
+        Dictionary with nested category structure:
+        {category: {subcategory: [statements]}, emojis: {...}}
     """
     statements_path = Path(__file__).parent.parent / 'data' / 'focus_statements.json'
     try:
@@ -243,30 +294,61 @@ def _load_focus_statements() -> Dict[str, List[str]]:
             return json.load(f)
     except Exception as e:
         logger.error(f"Error loading focus statements: {e}")
-        # Return fallback statements if file cannot be loaded
+        # Return fallback statements with nested structure
         return {
-            'grand': ['Your focus rate of {percentage}% is grand - keep it up!'],
-            'promising': ['Your focus rate of {percentage}% is promising - you\'re on the right track!'],
-            'developing': ['Your focus rate of {percentage}% is developing - keep building your focus skills!'],
-            'needs_focus': ['Your focus rate of {percentage}% needs tuning - you can improve with practice!']
+            'grand': {'general': ['Your focus rate of {percentage}% is grand - keep it up!']},
+            'promising': {'general': ['Your focus rate of {percentage}% is promising - you\'re on the right track!']},
+            'developing': {'general': ['Your focus rate of {percentage}% is developing - keep building your focus skills!']},
+            'needs_focus': {'general': ['Your focus rate of {percentage}% needs tuning - you can improve with practice!']}
         }
 
 
-def _get_random_focus_statement(focus_pct: float) -> Tuple[str, str, str]:
+def _get_random_focus_statement(
+    focus_pct: float,
+    stats: Optional[Dict[str, Any]] = None
+) -> Tuple[str, str, str]:
     """
-    Get a random focus statement based on the focus percentage.
+    Get a random focus statement based on focus percentage and dominant distraction.
+    
+    Selects a statement from the appropriate category (based on focus %) and
+    subcategory (based on dominant distraction type: phone, away, screen, or general).
     
     Args:
         focus_pct: Focus percentage (0-100)
+        stats: Optional statistics dictionary for determining dominant distraction
         
     Returns:
         Tuple of (statement_text, category_label, color_hex)
     """
     category_key, category_label, color = _get_focus_category(focus_pct)
-    statements = _load_focus_statements()
+    distraction_type = _get_dominant_distraction_type(stats)
+    statements_data = _load_focus_statements()
     
-    # Get statements for this category
-    category_statements = statements.get(category_key, [])
+    # Get the category data (now a dict with subcategories)
+    category_data = statements_data.get(category_key, {})
+    
+    # Handle both old flat structure (list) and new nested structure (dict)
+    if isinstance(category_data, list):
+        # Old format: flat list of statements
+        category_statements = category_data
+    else:
+        # New format: nested {subcategory: [statements]}
+        # Try to get statements for the dominant distraction type
+        category_statements = category_data.get(distraction_type, [])
+        
+        # Fallback to 'general' if no statements for this distraction type
+        if not category_statements:
+            category_statements = category_data.get('general', [])
+        
+        # Final fallback if still no statements
+        if not category_statements:
+            # Try to get any available subcategory
+            for subcat in ['general', 'phone', 'away', 'screen']:
+                category_statements = category_data.get(subcat, [])
+                if category_statements:
+                    break
+    
+    # Ultimate fallback
     if not category_statements:
         category_statements = [f'Your focus rate of {{percentage}}% is {category_label}.']
     
@@ -280,17 +362,23 @@ def _get_random_focus_statement(focus_pct: float) -> Tuple[str, str, str]:
     return (statement, category_label, color)
 
 
-def _create_focus_statement_paragraph(focus_pct: float) -> Paragraph:
+def _create_focus_statement_paragraph(
+    focus_pct: float,
+    stats: Optional[Dict[str, Any]] = None
+) -> Paragraph:
     """
     Create a paragraph with the focus statement, with the category word colored.
     
+    Selects a statement based on both focus percentage and dominant distraction type.
+    
     Args:
         focus_pct: Focus percentage (0-100)
+        stats: Optional statistics dictionary for determining dominant distraction
         
     Returns:
         ReportLab Paragraph object with colored category word
     """
-    statement, category_label, color = _get_random_focus_statement(focus_pct)
+    statement, category_label, color = _get_random_focus_statement(focus_pct, stats)
     
     # Replace the category word with a colored version using ReportLab markup
     # The category label appears in the statement (e.g., "is grand", "is promising")
@@ -311,10 +399,10 @@ def _create_focus_statement_paragraph(focus_pct: float) -> Paragraph:
     statement_style = ParagraphStyle(
         'FocusStatement',
         fontName='Times-Italic',
-        fontSize=12,
+        fontSize=11,
         textColor=colors.HexColor('#2C3E50'),
         alignment=TA_CENTER,
-        leading=16
+        leading=14
     )
     
     return Paragraph(colored_statement, statement_style)
@@ -349,8 +437,8 @@ def _get_emoji_font_paths() -> list:
     import platform
     system = platform.system()
     
-    # Default size for scalable fonts
-    default_size = 48
+    # Default size for scalable fonts (reduced to prevent overflow)
+    default_size = 40
     
     # Platform-specific font configurations
     # Format: (font_path, size) - size is important for bitmap fonts like Apple Color Emoji
@@ -358,9 +446,9 @@ def _get_emoji_font_paths() -> list:
     if system == 'Darwin':  # macOS
         return [
             # Apple Color Emoji - bitmap font, only supports fixed sizes
-            ('/System/Library/Fonts/Apple Color Emoji.ttc', 48),
             ('/System/Library/Fonts/Apple Color Emoji.ttc', 40),
             ('/System/Library/Fonts/Apple Color Emoji.ttc', 32),
+            ('/System/Library/Fonts/Apple Color Emoji.ttc', 24),
         ]
     
     elif system == 'Windows':
@@ -412,7 +500,7 @@ def _create_focus_emoji_image(focus_pct: float) -> Optional[Table]:
     emoji = _get_random_focus_emoji(focus_pct)
     
     # Default size (will be updated if font loads successfully)
-    emoji_size = 48
+    emoji_size = 40
     
     # Try to load emoji font (platform-specific order)
     font = None
@@ -770,22 +858,27 @@ class RoundedBoxFlowable(Flowable):
             item.drawOn(canvas, self.padding, y_position)
 
 
-def _create_focus_card(focus_pct: float) -> RoundedBoxFlowable:
+def _create_focus_card(
+    focus_pct: float,
+    stats: Optional[Dict[str, Any]] = None
+) -> RoundedBoxFlowable:
     """
     Create a rounded card containing the focus gauge, legend, statement, and emoji.
     
     Groups all focus visualization elements into a visually cohesive container
-    with rounded corners, background, and border styling.
+    with rounded corners, background, and border styling. The statement is
+    customized based on the dominant distraction type from session stats.
     
     Args:
         focus_pct: Focus percentage (0-100)
+        stats: Optional statistics dictionary for customizing the statement
         
     Returns:
         RoundedBoxFlowable containing all focus elements in a styled card
     """
     # Create the individual components
     gauge_with_legend = _create_gauge_with_legend(focus_pct)
-    focus_statement = _create_focus_statement_paragraph(focus_pct)
+    focus_statement = _create_focus_statement_paragraph(focus_pct, stats)
     focus_emoji = _create_focus_emoji_image(focus_pct)
     
     # Build content list
@@ -1041,8 +1134,9 @@ def generate_report(
     story.append(stats_table)
     
     # Add focus visualization card (gauge, legend, statement, emoji in a rounded container)
+    # Pass stats to customize the statement based on dominant distraction type
     story.append(Spacer(1, 0.8 * inch))
-    focus_card = _create_focus_card(focus_pct)
+    focus_card = _create_focus_card(focus_pct, stats)
     
     # Center the focus card using a wrapper table
     centered_card = Table([[focus_card]], colWidths=[6.2 * inch])

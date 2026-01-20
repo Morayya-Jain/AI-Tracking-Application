@@ -76,7 +76,9 @@ python3 -m unittest tests.test_session tests.test_analytics
 
 ## 📁 Data Files
 
-- `data/focus_statements.json` - **REQUIRED** - PDF feedback templates
+- `data/focus_statements.json` - **REQUIRED** - PDF feedback templates (nested by distraction type)
+  - Structure: `{category: {phone/away/screen/general: [statements]}, emojis: {...}}`
+  - Statement selection: Based on focus % AND dominant distraction type (by percentage of total)
 - `data/blocklist.json` - Screen monitoring blocklist (auto-created)
 - `data/usage_data.json` - Usage tracking (gitignored)
 
