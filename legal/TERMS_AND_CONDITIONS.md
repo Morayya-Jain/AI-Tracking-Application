@@ -1,5 +1,6 @@
 ---
 title: Terms and Conditions
+permalink: /legal/terms/
 ---
 
 # Terms and Conditions

@@ -1,0 +1,21 @@
+# GitHub Pages Jekyll Configuration
+title: BrainDock
+description: Focus Tracking Application
+
+# Enable markdown processing
+markdown: kramdown
+
+# Theme (minimal for clean legal documents)
+theme: jekyll-theme-minimal
+
+# Include these directories
+include:
+  - legal
+
+# Process all markdown files
+defaults:
+  - scope:
+      path: "legal"
+      type: "pages"
+    values:
+      layout: "default"
