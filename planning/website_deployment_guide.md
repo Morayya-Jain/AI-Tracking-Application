@@ -15,7 +15,7 @@ A summary of the approach to create and deploy a landing page for BrainDock.
 
 ## Architecture Decision
 
-**Separate repository** for the website (not in the main `gavin-ai` repo):
+**Separate repository** for the website (not in the main `braindock` repo):
 - Clean separation between product code and marketing site
 - Different deployment cycles
 - Keeps main repo focused on application code
@@ -67,8 +67,8 @@ braindock-website/
 ├── css/
 │   └── style.css           # Styles (Seraphic Focus design)
 ├── assets/
-│   ├── logo_icon.png       # Copy from gavin-ai/assets/
-│   └── logo_with_text.png  # Copy from gavin-ai/assets/
+│   ├── logo_icon.png       # Copy from braindock/assets/
+│   └── logo_with_text.png  # Copy from braindock/assets/
 └── context/                # Reference files (optional)
     └── design_guidelines.json
 ```
@@ -77,7 +77,7 @@ braindock-website/
 
 ## Context Files to Copy
 
-From `gavin-ai` to the new website repo:
+From `braindock` to the new website repo:
 
 | Source | Destination | Purpose |
 |--------|-------------|---------|

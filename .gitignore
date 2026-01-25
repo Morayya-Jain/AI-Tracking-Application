@@ -4,9 +4,7 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
 develop-eggs/
-dist/
 downloads/
 eggs/
 .eggs/
@@ -20,10 +18,24 @@ wheels/
 .installed.cfg
 *.egg
 
+# PyInstaller
+dist/
+build/pyinstaller-work/
+build/BrainDock/
+*.manifest
+*.spec.bak
+
+# Generated icon files (regenerate with build/create_icons.py)
+build/icon.icns
+build/icon.ico
+build/*.iconset/
+
 # Virtual environments
 venv/
 env/
 ENV/
+.venv/
+.venv-build/
 
 # IDEs
 .vscode/

@@ -1,6 +1,6 @@
 ---
 name: Simplified MVP Plan
-overview: A streamlined approach to distribute Gavin AI as a Mac desktop app with a simple GUI, embedded API key, and a basic landing page for downloads. Windows support deferred to later.
+overview: A streamlined approach to distribute BrainDock as a Mac desktop app with a simple GUI, embedded API key, and a basic landing page for downloads. Windows support deferred to later.
 todos:
   - id: gui-development
     content: Create tkinter GUI with Start/Stop, status indicator, timer, and report button
@@ -16,7 +16,7 @@ todos:
     status: pending
 ---
 
-# Gavin AI - Simplified MVP Plan
+# BrainDock - Simplified MVP Plan
 
 ## What Changed (Simplifications)
 
@@ -110,7 +110,7 @@ Create a simple public page for downloads.
 **Option A: GitHub Pages (Recommended)**
 
 - Free hosting
-- Lives at `yourusername.github.io/gavin-ai`
+- Lives at `yourusername.github.io/braindock`
 - Simple HTML page with download button
 - Can update by pushing to repo
 
@@ -122,7 +122,7 @@ Create a simple public page for downloads.
 
 **Landing page content:**
 
-1. What Gavin AI does (1-2 sentences)
+1. What BrainDock does (1-2 sentences)
 2. Download button (macOS)
 3. Quick start instructions (3-4 steps)
 4. Privacy note
@@ -213,7 +213,7 @@ Since you don't want automatic analytics:
 ## File Structure After Changes
 
 ```
-gavin_ai/
+braindock/
 ├── gui/
 │   ├── __init__.py
 │   └── app.py              # Main GUI (NEW)

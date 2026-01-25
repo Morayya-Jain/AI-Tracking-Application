@@ -406,7 +406,7 @@ class PaymentScreen:
         
         # Main Card Container - fixed height, no expansion needed
         self.card_width = 550
-        self.card_height = 560
+        self.card_height = 580
         
         self.card_bg = Card(self.center_container, width=self.card_width, height=self.card_height, bg_color=COLORS["surface"])
         self.card_bg.pack()
