@@ -81,6 +81,9 @@ class StripeIntegration:
             return None, "Stripe not configured"
         
         try:
+            # Import config for terms requirement setting
+            import config
+            
             # Build session parameters
             session_params = {
                 "payment_method_types": ["card"],
@@ -93,6 +96,12 @@ class StripeIntegration:
                 "cancel_url": cancel_url,
                 "allow_promotion_codes": True,  # Allow users to enter promo codes
             }
+            
+            # Add Terms of Service consent if enabled (requires T&C URL in Stripe Dashboard)
+            if config.STRIPE_REQUIRE_TERMS:
+                session_params["consent_collection"] = {
+                    "terms_of_service": "required"
+                }
             
             # Add customer email if provided
             if customer_email:
@@ -156,6 +165,7 @@ class StripeIntegration:
                 "customer_email": session.customer_details.email if session.customer_details else None,
                 "amount_total": session.amount_total,
                 "currency": session.currency,
+                "terms_accepted": session.consent.terms_of_service if session.consent else None,
             }
             
             if is_paid:

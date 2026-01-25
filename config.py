@@ -98,6 +98,8 @@ STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")  # sk_live_... or sk_test
 STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "")  # pk_live_... or pk_test_...
 STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID", "")  # price_... (from Stripe product)
 PRODUCT_PRICE_DISPLAY = os.getenv("PRODUCT_PRICE_DISPLAY", "One-time payment")  # Display text
+# Require Terms of Service acceptance at checkout (must configure T&C URL in Stripe Dashboard first)
+STRIPE_REQUIRE_TERMS = os.getenv("STRIPE_REQUIRE_TERMS", "").lower() in ("true", "1", "yes")
 
 # Licensing Configuration
 LICENSE_FILE = BASE_DIR / "data" / "license.json"
