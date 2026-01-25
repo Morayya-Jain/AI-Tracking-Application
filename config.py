@@ -10,9 +10,17 @@ load_dotenv()
 # Base directory
 BASE_DIR = Path(__file__).parent
 
+# Vision Provider Selection
+# Options: "openai" or "gemini"
+VISION_PROVIDER = os.getenv("VISION_PROVIDER", "openai")
+
 # OpenAI Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_VISION_MODEL = "gpt-4o-mini"  # For image analysis (person/gadget detection)
+
+# Gemini Configuration
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_VISION_MODEL = "gemini-2.0-flash"  # Cheaper alternative to OpenAI
 
 # Camera Configuration
 CAMERA_INDEX = 0

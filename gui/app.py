@@ -29,8 +29,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import config
 from camera.capture import CameraCapture
-from camera.vision_detector import VisionDetector
-from camera import get_event_type
+from camera import get_event_type, create_vision_detector
 from tracking.session import Session
 from tracking.analytics import compute_statistics, get_focus_percentage
 from tracking.usage_limiter import get_usage_limiter, UsageLimiter
@@ -3387,14 +3386,14 @@ class BrainDockGUI:
         privacy_text = """BrainDock uses OpenAI's Vision API to monitor your focus sessions.
 
 How it works:
-• Camera frames are sent to OpenAI for analysis
+• We capture frames for analysis; we don't store them locally
 • AI detects your presence and gadget distractions
-• No video is recorded or stored locally
-
-Privacy:
-• OpenAI may retain data for up to 30 days for abuse monitoring
-• No data is stored long-term
 • All detection happens in real-time
+
+Data Retention:
+• OpenAI retains data for up to 30 days for safety monitoring, then deletes it
+• See OpenAI's API data usage policy: openai.com/policies/api-data-usage-policies
+• No video or images are saved on your device
 
 By clicking 'I Understand', you acknowledge this data processing."""
         
@@ -4028,11 +4027,11 @@ By clicking 'I Understand', you acknowledge this data processing."""
         """
         Main detection loop running in a separate thread.
         
-        Captures frames from camera and analyzes them using OpenAI Vision API.
+        Captures frames from camera and analyzes them using Vision API.
         Also handles unfocused alerts at configured thresholds and usage tracking.
         """
         try:
-            detector = VisionDetector()
+            detector = create_vision_detector()
             
             with CameraCapture() as camera:
                 if not camera.is_opened:
@@ -4072,7 +4071,9 @@ By clicking 'I Understand', you acknowledge this data processing."""
                         # Start session on first successful detection (eliminates bootup time)
                         if not self.session_started:
                             self.session.start()
-                            self.session_start_time = datetime.now()
+                            # IMPORTANT: Use the SAME start time as session for consistency
+                            # This ensures GUI timer matches PDF report duration exactly
+                            self.session_start_time = self.session.start_time
                             self.session_started = True
                             logger.info("First detection complete - session timer started")
                         
@@ -4149,7 +4150,9 @@ By clicking 'I Understand', you acknowledge this data processing."""
                 # Start session immediately for screen-only mode
                 if not self.session_started:
                     self.session.start()
-                    self.session_start_time = datetime.now()
+                    # IMPORTANT: Use the SAME start time as session for consistency
+                    # This ensures GUI timer matches PDF report duration exactly
+                    self.session_start_time = self.session.start_time
                     self.session_started = True
                     logger.info("Screen-only mode - session timer started")
                     # Update UI to show focused status

@@ -24,7 +24,7 @@ from typing import Optional
 import config
 from instance_lock import check_single_instance, get_existing_pid
 from camera.capture import CameraCapture
-from camera.vision_detector import VisionDetector
+from camera import create_vision_detector
 from tracking.session import Session
 from tracking.analytics import compute_statistics
 from reporting.pdf_report import generate_report
@@ -88,8 +88,8 @@ class BrainDock:
         print("  • Monitor your presence via OpenAI Vision API")
         print("  • Detect phone usage using AI")
         print("  • Generate detailed PDF reports with AI insights")
-        print("\nPrivacy: Camera frames are sent to OpenAI for analysis.")
-        print("Frames are NOT stored long-term (30-day retention for abuse only).")
+        print("\nPrivacy: We capture frames for analysis; we don't store them locally.")
+        print("OpenAI retains data for up to 30 days per their API data policy.")
         print("All detections and summaries powered by AI!")
         print("\n" + "=" * 60)
     
@@ -137,7 +137,7 @@ class BrainDock:
         
         try:
             # Initialize detector and camera
-            detector = VisionDetector()
+            detector = create_vision_detector()
             
             with CameraCapture() as camera:
                 if not camera.is_opened:

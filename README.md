@@ -13,7 +13,7 @@ A local AI-powered focus tracker that monitors presence and **gadget distraction
   - Ignores: Smartwatches/Apple Watch (used for time/notifications, not distractions)
 - **Session Analytics**: Computes focused time, away time, and gadget usage statistics
 - **PDF Reports**: Professional combined PDF with summary statistics and full session logs
-- **Privacy-Conscious**: Camera frames analyzed by OpenAI (30-day retention), no local video storage
+- **Privacy-Conscious**: We capture frames for analysis; we don't store them locally. See [OpenAI's retention policy](https://openai.com/policies/api-data-usage-policies)
 
 ## Requirements
 
@@ -159,10 +159,16 @@ Edit `config.py` to customize:
 
 ## Privacy & Data
 
-### What Gets Analyzed
-- **Camera frames** sent to OpenAI Vision API every 1 second
-- OpenAI retains images for 30 days (abuse monitoring), then automatically deletes them
-- No video or images stored locally on your device
+### Frame Capture & Storage
+- **We capture frames for analysis; we don't store them locally**
+- Frames sent to OpenAI Vision API every 1 second for real-time detection
+- No video or images saved on your device
+
+### OpenAI Data Retention (Vendor Terms)
+Per [OpenAI's API Data Usage Policy](https://openai.com/policies/api-data-usage-policies):
+- Data retained for up to 30 days for safety/abuse monitoring
+- Then permanently deleted
+- NOT used to train models
 
 ### Gadget Detection Privacy
 - System detects **active gadget usage** based on two factors:
@@ -178,14 +184,10 @@ Edit `config.py` to customize:
   - Controller sitting on desk = NOT detected
   - Smartwatch on wrist = NOT detected (checking time is fine)
 
-### Data Storage
+### Local Data Storage
 - **Session data**: Stored locally as JSON (timestamps and event types only)
 - **Reports**: PDF files saved to your Downloads folder
-- **No video recordings**: Camera frames are never saved to disk
-
-### OpenAI Data Usage
-- Vision API: Camera frames (for real-time detection)
-- All data processed per OpenAI's privacy policy
+- **Frames**: Captured for analysis but never saved to disk
 
 ## Future Enhancements
 

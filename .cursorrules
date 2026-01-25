@@ -85,10 +85,10 @@ Reports are saved to: ~/Downloads/
 - NO fallback methods - AI is the only detection method
 
 ### 2. Privacy & Data
-- Camera frames sent to OpenAI (not stored locally)
-- OpenAI retains for 30 days (abuse monitoring), then deletes
+- We capture frames for analysis; we don't store them locally
+- OpenAI retains up to 30 days for safety monitoring per [API policy](https://openai.com/policies/api-data-usage-policies)
 - Session data saved as JSON (timestamps + event types only)
-- NO video recordings saved locally
+- Frames never saved to disk
 
 ### 3. Event System
 Three event types tracked:

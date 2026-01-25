@@ -397,26 +397,29 @@ Just add fields to the prompt and handle them in your code!
 
 ## 🛡️ Privacy Considerations
 
-### What's Sent to OpenAI:
+**Important:** BrainDock does NOT perform facial verification or identification. We do NOT create or retain biometric templates. The system only detects presence/absence and active gadget usage—no identity processing occurs.
 
-**During Session:**
-- ✅ Camera frames (base64 encoded)
-- ✅ Sent every second
-- ❌ NOT stored by OpenAI (per API data policy)
-- ❌ NOT used for training
+### Frame Capture & Storage:
+
+**What We Do:**
+- ✅ Capture frames for analysis; we don't store them locally
+- ✅ Frames sent to OpenAI every second (base64 encoded)
+- ✅ All detection happens in real-time
+- ❌ No video or images saved on your device
 
 **After Session:**
-- ✅ Anonymous statistics only
-- ❌ NO images sent
+- ✅ Anonymous statistics only (timestamps, event types)
+- ❌ NO images sent for summary generation
 
-### OpenAI Data Policy:
+### OpenAI Data Retention (Vendor Terms):
 
-- Images sent via API are NOT stored long-term
-- NOT used to train models
-- Retained 30 days for abuse monitoring only
+Per [OpenAI's API Data Usage Policy](https://openai.com/policies/api-data-usage-policies):
+- Data retained for up to 30 days for safety/abuse monitoring
 - Then permanently deleted
+- NOT used to train models
+- Zero-day retention available for enterprise (not enabled by default)
 
-**Read more:** https://openai.com/policies/api-data-usage-policies
+**Full policy:** https://openai.com/policies/api-data-usage-policies
 
 ---
 

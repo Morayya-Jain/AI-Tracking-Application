@@ -99,4 +99,4 @@ python3 main.py     # GUI launches, check ~/Downloads/ for PDF
 
 Type hints required • Docstrings • `pathlib.Path` • Python 3.9+ • `logger.info()` internal, `print()` user-facing
 
-**Privacy**: Camera frames → OpenAI (30-day retention) → deleted. No video saved locally.
+**Privacy**: We capture frames for analysis; we don't store them locally. OpenAI retains up to 30 days per [API policy](https://openai.com/policies/api-data-usage-policies).

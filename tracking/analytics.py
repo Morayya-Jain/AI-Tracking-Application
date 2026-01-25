@@ -12,8 +12,9 @@ def compute_statistics(events: List[Dict[str, Any]], total_duration: float) -> D
     All calculations use floats for full precision.
     Truncation to int happens ONLY at final PDF display time.
     
-    To ensure summary matches sum of displayed logs, we sum int(each duration).
-    This way: summary = sum of what each log entry displays.
+    This ensures the total duration shown in PDF matches the GUI timer display,
+    which is what users expect. Individual log entries may show slightly different
+    totals when summed due to per-entry truncation at display time.
     
     Args:
         events: List of event dictionaries with type, start, end, and duration
@@ -29,12 +30,10 @@ def compute_statistics(events: List[Dict[str, Any]], total_duration: float) -> D
     screen_distraction_seconds = 0.0
     paused_seconds = 0.0
     
-    # Sum up durations by event type
-    # Truncate each to int before summing so summary = sum of displayed log values
+    # Sum up durations by event type using full precision (floats)
+    # Truncation happens only at final PDF display time to match GUI timer
     for event in events:
-        raw_duration = float(event.get("duration_seconds", 0))
-        # Truncate to match what will be displayed in logs
-        duration = float(int(raw_duration))
+        duration = float(event.get("duration_seconds", 0))
         event_type = event.get("type")
         
         if event_type == config.EVENT_PRESENT:
@@ -87,8 +86,7 @@ def consolidate_events(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     and creates a cleaner timeline view.
     
     Keeps float precision - truncation happens at PDF display time.
-    Truncates each event to int BEFORE summing so consolidated totals
-    match what individual displayed events would sum to.
+    This ensures consolidated totals match session duration accurately.
     
     Args:
         events: List of raw event dictionaries
@@ -106,9 +104,8 @@ def consolidate_events(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         event_type = event.get("type")
         start_time = event.get("start")
         end_time = event.get("end")
-        raw_duration = float(event.get("duration_seconds", 0))
-        # Truncate to int then back to float - ensures sum matches displayed values
-        duration = float(int(raw_duration))
+        # Keep full precision - truncation happens at PDF display time
+        duration = float(event.get("duration_seconds", 0))
         
         # If this is the same type as current, extend the current event
         if current_event and current_event["type"] == event_type:

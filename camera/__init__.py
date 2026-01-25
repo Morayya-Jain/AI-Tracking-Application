@@ -1,11 +1,44 @@
 """
-Determine which detection method to use based on configuration.
+Camera detection module with provider-agnostic vision detection.
+
+Supports multiple vision providers (OpenAI, Gemini) via factory pattern.
 """
 
 import logging
+from typing import TYPE_CHECKING
+
 import config
 
+if TYPE_CHECKING:
+    from camera.base_detector import VisionDetectorProtocol
+
 logger = logging.getLogger(__name__)
+
+
+def create_vision_detector() -> "VisionDetectorProtocol":
+    """
+    Create a vision detector based on the configured provider.
+    
+    Uses VISION_PROVIDER from config to determine which detector to instantiate.
+    Supported providers: "openai" (default), "gemini"
+    
+    Returns:
+        VisionDetectorProtocol: The appropriate vision detector instance
+        
+    Raises:
+        ValueError: If the configured provider is not supported or API key is missing
+    """
+    provider = config.VISION_PROVIDER.lower()
+    
+    if provider == "gemini":
+        from camera.gemini_detector import GeminiVisionDetector
+        logger.info("Using Gemini vision provider")
+        return GeminiVisionDetector()
+    else:
+        # Default to OpenAI
+        from camera.vision_detector import VisionDetector
+        logger.info("Using OpenAI vision provider")
+        return VisionDetector()
 
 
 def get_event_type(detection_state: dict) -> str:
