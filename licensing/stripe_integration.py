@@ -27,24 +27,57 @@ def _fix_ssl_certificates():
     """
     cert_path = None
     
-    # Try certifi module first - PyInstaller's hook patches this to work in bundles
-    try:
-        import certifi
-        cert_path = certifi.where()
-        if os.path.exists(cert_path):
-            logger.debug(f"Using certifi SSL certificates: {cert_path}")
-        else:
-            logger.warning(f"certifi.where() returned non-existent path: {cert_path}")
-            cert_path = None
-    except ImportError:
-        logger.debug("certifi not available")
-    except Exception as e:
-        logger.warning(f"Error getting certifi path: {e}")
+    # Check if we're running from a PyInstaller bundle
+    is_bundled = getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
     
-    # Platform-specific fallback locations
+    # For bundled apps, explicitly look for certificates in known bundle locations
+    if is_bundled:
+        meipass = sys._MEIPASS
+        
+        # Possible certificate locations in PyInstaller bundles
+        bundle_cert_paths = [
+            os.path.join(meipass, 'certifi', 'cacert.pem'),
+        ]
+        
+        # For macOS .app bundles, also check Resources directory
+        if sys.platform == "darwin":
+            # _MEIPASS might be .../Contents/MacOS or .../Contents/Frameworks
+            # Certificates are often in .../Contents/Resources/certifi
+            meipass_parts = meipass.split(os.sep)
+            if 'Contents' in meipass_parts:
+                contents_idx = meipass_parts.index('Contents')
+                contents_path = os.sep.join(meipass_parts[:contents_idx + 1])
+                resources_cert = os.path.join(contents_path, 'Resources', 'certifi', 'cacert.pem')
+                bundle_cert_paths.insert(0, resources_cert)
+        
+        for path in bundle_cert_paths:
+            if os.path.exists(path):
+                cert_path = path
+                logger.debug(f"Using bundled SSL certificates: {cert_path}")
+                break
+        
+        if not cert_path:
+            logger.warning(f"Could not find certificates in bundle. Searched: {bundle_cert_paths}")
+    
+    # Try certifi module if bundle search didn't find anything
+    if not cert_path:
+        try:
+            import certifi
+            certifi_path = certifi.where()
+            if os.path.exists(certifi_path):
+                cert_path = certifi_path
+                logger.debug(f"Using certifi SSL certificates: {cert_path}")
+            else:
+                logger.warning(f"certifi.where() returned non-existent path: {certifi_path}")
+        except ImportError:
+            logger.debug("certifi not available")
+        except Exception as e:
+            logger.warning(f"Error getting certifi path: {e}")
+    
+    # Platform-specific fallback locations (for both bundled and non-bundled)
     if not cert_path:
         if sys.platform == "darwin":
-            # macOS certificate locations
+            # macOS system certificate locations
             macos_certs = [
                 '/etc/ssl/cert.pem',
                 '/private/etc/ssl/cert.pem',
@@ -210,7 +243,14 @@ class StripeIntegration:
             error_msg = f"File not found: {filename} - {e}"
             logger.error(f"FileNotFoundError in checkout session: {error_msg}")
             logger.error(f"Full traceback: {traceback.format_exc()}")
-            # Show actual error for debugging
+            
+            # Log SSL environment for debugging
+            ssl_file = os.environ.get('SSL_CERT_FILE', 'not set')
+            logger.error(f"SSL_CERT_FILE env: {ssl_file}, exists: {os.path.exists(ssl_file) if ssl_file != 'not set' else 'N/A'}")
+            
+            # Provide helpful error message
+            if 'cert' in str(e).lower() or 'ssl' in str(e).lower() or filename == 'unknown':
+                return None, "SSL certificate error. Please restart the app."
             return None, f"Missing file: {filename}"
         except OSError as e:
             # Catch other OS errors (permissions, etc.)
