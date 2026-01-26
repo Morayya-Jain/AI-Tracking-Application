@@ -18,6 +18,22 @@ logger = logging.getLogger(__name__)
 # Global variable to store the resolved certificate path
 _CERT_PATH = None
 
+# Debug log path for instrumentation - use Desktop for visibility from packaged app
+_DEBUG_LOG_PATH = os.path.expanduser("~/Desktop/braindock_debug.log")
+
+def _debug_log(hypothesis_id: str, location: str, message: str, data: dict):
+    """Write debug log entry to file."""
+    # #region agent log
+    import json
+    import time
+    try:
+        entry = {"hypothesisId": hypothesis_id, "location": location, "message": message, "data": data, "timestamp": int(time.time() * 1000), "sessionId": "debug-session"}
+        with open(_DEBUG_LOG_PATH, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception:
+        pass
+    # #endregion
+
 # Fix SSL certificates for bundled apps (PyInstaller)
 # This must be done BEFORE importing stripe/httpx
 def _fix_ssl_certificates():
@@ -37,6 +53,10 @@ def _fix_ssl_certificates():
     
     # Check if we're running from a PyInstaller bundle
     is_bundled = getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
+    
+    # #region agent log
+    _debug_log("A", "stripe_integration.py:_fix_ssl_certificates:start", "SSL fix starting", {"is_bundled": is_bundled, "meipass": getattr(sys, '_MEIPASS', None), "platform": sys.platform})
+    # #endregion
     
     # For bundled apps, explicitly look for certificates in known bundle locations
     if is_bundled:
@@ -58,8 +78,16 @@ def _fix_ssl_certificates():
                 resources_cert = os.path.join(contents_path, 'Resources', 'certifi', 'cacert.pem')
                 bundle_cert_paths.insert(0, resources_cert)
         
+        # #region agent log
+        _debug_log("A", "stripe_integration.py:bundle_paths", "Bundle cert paths to check", {"paths": bundle_cert_paths, "meipass_parts": meipass.split(os.sep)})
+        # #endregion
+        
         for path in bundle_cert_paths:
-            if os.path.exists(path):
+            exists = os.path.exists(path)
+            # #region agent log
+            _debug_log("D", "stripe_integration.py:check_bundle_path", f"Checking bundle path", {"path": path, "exists": exists})
+            # #endregion
+            if exists:
                 cert_path = path
                 logger.debug(f"Using bundled SSL certificates: {cert_path}")
                 break
@@ -80,7 +108,11 @@ def _fix_ssl_certificates():
                 '/opt/homebrew/etc/openssl@3/cert.pem',
             ]
             for path in macos_certs:
-                if os.path.exists(path):
+                exists = os.path.exists(path)
+                # #region agent log
+                _debug_log("B", "stripe_integration.py:check_system_path", f"Checking system path", {"path": path, "exists": exists})
+                # #endregion
+                if exists:
                     cert_path = path
                     logger.debug(f"Using macOS system SSL certificates: {cert_path}")
                     break
@@ -101,7 +133,11 @@ def _fix_ssl_certificates():
         try:
             import certifi
             certifi_path = certifi.where()
-            if os.path.exists(certifi_path):
+            certifi_exists = os.path.exists(certifi_path)
+            # #region agent log
+            _debug_log("C", "stripe_integration.py:certifi_check", "Certifi.where() result", {"certifi_path": certifi_path, "exists": certifi_exists})
+            # #endregion
+            if certifi_exists:
                 cert_path = certifi_path
                 logger.debug(f"Using certifi SSL certificates: {cert_path}")
             else:
@@ -110,6 +146,10 @@ def _fix_ssl_certificates():
             logger.debug("certifi not available")
         except Exception as e:
             logger.warning(f"Error getting certifi path: {e}")
+    
+    # #region agent log
+    _debug_log("A", "stripe_integration.py:cert_path_result", "Final cert path determined", {"cert_path": cert_path})
+    # #endregion
     
     if cert_path:
         _CERT_PATH = cert_path
@@ -122,13 +162,20 @@ def _fix_ssl_certificates():
         # Patch certifi.where() to return our path (httpx uses certifi internally)
         try:
             import certifi
+            original_where = certifi.where
             certifi.where = lambda: cert_path
+            # #region agent log
+            _debug_log("C", "stripe_integration.py:certifi_patched", "Patched certifi.where()", {"original": str(original_where()), "patched_to": cert_path})
+            # #endregion
             logger.debug("Patched certifi.where() to return correct path")
         except ImportError:
             pass
         
         logger.info(f"SSL certificates configured: {cert_path}")
     else:
+        # #region agent log
+        _debug_log("E", "stripe_integration.py:no_cert_found", "No certificate path found!", {})
+        # #endregion
         # Log warning but don't fail - some systems use built-in certificate stores
         logger.warning("Could not find SSL certificates - relying on system defaults")
     
@@ -249,6 +296,9 @@ class StripeIntegration:
                     # Continue without the promo code
             
             # Create the session
+            # #region agent log
+            _debug_log("E", "stripe_integration.py:before_stripe_call", "About to call stripe.checkout.Session.create", {"ssl_cert_file": os.environ.get('SSL_CERT_FILE', 'not set'), "cert_path_global": _CERT_PATH})
+            # #endregion
             session = stripe.checkout.Session.create(**session_params)
             
             logger.info(f"Created Stripe checkout session: {session.id[:20]}...")
@@ -258,6 +308,9 @@ class StripeIntegration:
             error_msg = str(e)
             logger.error(f"Stripe error creating checkout session: {error_msg}")
             logger.debug(f"Stripe error traceback: {traceback.format_exc()}")
+            # #region agent log
+            _debug_log("E", "stripe_integration.py:stripe_error", "StripeError caught", {"error": error_msg, "type": type(e).__name__})
+            # #endregion
             return None, f"Payment service error: {error_msg}"
         except FileNotFoundError as e:
             # This can happen if SSL certificates are not found or other file issues
@@ -268,7 +321,12 @@ class StripeIntegration:
             
             # Log SSL environment for debugging
             ssl_file = os.environ.get('SSL_CERT_FILE', 'not set')
-            logger.error(f"SSL_CERT_FILE env: {ssl_file}, exists: {os.path.exists(ssl_file) if ssl_file != 'not set' else 'N/A'}")
+            ssl_exists = os.path.exists(ssl_file) if ssl_file != 'not set' else False
+            logger.error(f"SSL_CERT_FILE env: {ssl_file}, exists: {ssl_exists}")
+            
+            # #region agent log
+            _debug_log("E", "stripe_integration.py:file_not_found", "FileNotFoundError caught", {"filename": filename, "error": str(e), "traceback": traceback.format_exc()[-500:], "ssl_cert_file": ssl_file, "ssl_exists": ssl_exists, "cert_path_global": _CERT_PATH})
+            # #endregion
             
             # Provide helpful error message
             if 'cert' in str(e).lower() or 'ssl' in str(e).lower() or filename == 'unknown':
