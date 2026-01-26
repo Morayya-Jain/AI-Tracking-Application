@@ -30,6 +30,9 @@ build/icon.icns
 build/icon.ico
 build/*.iconset/
 
+# Generated runtime hook with embedded API keys (NEVER commit)
+build/runtime_hook.py
+
 # Virtual environments
 venv/
 env/

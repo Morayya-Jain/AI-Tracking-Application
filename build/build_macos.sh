@@ -96,22 +96,52 @@ fi
 if [[ -z "$GEMINI_API_KEY" ]]; then
     echo -e "${RED}Error: GEMINI_API_KEY environment variable is required.${NC}"
     echo ""
-    echo "Usage: GEMINI_API_KEY=key STRIPE_SECRET_KEY=key STRIPE_PUBLISHABLE_KEY=key STRIPE_PRICE_ID=id ./build/build_macos.sh"
+    echo "Usage: GEMINI_API_KEY=key [OPENAI_API_KEY=key] STRIPE_SECRET_KEY=key STRIPE_PUBLISHABLE_KEY=key STRIPE_PRICE_ID=id ./build/build_macos.sh"
     exit 1
 fi
 
 echo ""
 echo -e "${GREEN}Gemini API key detected - will be embedded in build.${NC}"
-export BUNDLED_GEMINI_API_KEY="$GEMINI_API_KEY"
+
+# Set bundled OpenAI API key (optional - for fallback/alternative)
+if [[ -n "$OPENAI_API_KEY" ]]; then
+    echo -e "${GREEN}OpenAI API key detected - will be embedded in build.${NC}"
+else
+    echo -e "${YELLOW}Note: OpenAI API key not provided (optional - Gemini is primary).${NC}"
+fi
 
 # Set bundled Stripe keys (optional but recommended)
 if [[ -n "$STRIPE_SECRET_KEY" ]]; then
     echo -e "${GREEN}Stripe keys detected - will be embedded in build.${NC}"
-    export BUNDLED_STRIPE_SECRET_KEY="$STRIPE_SECRET_KEY"
-    export BUNDLED_STRIPE_PUBLISHABLE_KEY="$STRIPE_PUBLISHABLE_KEY"
-    export BUNDLED_STRIPE_PRICE_ID="$STRIPE_PRICE_ID"
 else
     echo -e "${YELLOW}Warning: Stripe keys not provided. Payment features will be disabled.${NC}"
+fi
+
+# Generate runtime hook with embedded API keys
+# This is critical - environment variables don't persist into bundled apps,
+# so we need to embed the actual values into a Python file that runs at startup
+echo ""
+echo -e "${YELLOW}Generating runtime hook with embedded keys...${NC}"
+
+RUNTIME_HOOK="$SCRIPT_DIR/runtime_hook.py"
+RUNTIME_HOOK_TEMPLATE="$SCRIPT_DIR/runtime_hook_template.py"
+
+if [[ -f "$RUNTIME_HOOK_TEMPLATE" ]]; then
+    # Copy template and replace placeholders with actual values
+    cp "$RUNTIME_HOOK_TEMPLATE" "$RUNTIME_HOOK"
+    
+    # Use sed to replace placeholders (handle special characters in keys)
+    # We use | as delimiter since keys might contain /
+    sed -i '' "s|%%OPENAI_API_KEY%%|${OPENAI_API_KEY:-}|g" "$RUNTIME_HOOK"
+    sed -i '' "s|%%GEMINI_API_KEY%%|${GEMINI_API_KEY}|g" "$RUNTIME_HOOK"
+    sed -i '' "s|%%STRIPE_SECRET_KEY%%|${STRIPE_SECRET_KEY:-}|g" "$RUNTIME_HOOK"
+    sed -i '' "s|%%STRIPE_PUBLISHABLE_KEY%%|${STRIPE_PUBLISHABLE_KEY:-}|g" "$RUNTIME_HOOK"
+    sed -i '' "s|%%STRIPE_PRICE_ID%%|${STRIPE_PRICE_ID:-}|g" "$RUNTIME_HOOK"
+    
+    echo -e "${GREEN}Runtime hook generated with embedded keys.${NC}"
+else
+    echo -e "${RED}Error: Runtime hook template not found at $RUNTIME_HOOK_TEMPLATE${NC}"
+    exit 1
 fi
 
 # Clean previous builds
@@ -120,6 +150,8 @@ echo -e "${YELLOW}Cleaning previous builds...${NC}"
 rm -rf "$PROJECT_ROOT/dist/BrainDock"
 rm -rf "$PROJECT_ROOT/dist/BrainDock.app"
 rm -rf "$PROJECT_ROOT/build/BrainDock"
+# Also clean any previously generated runtime hook (will be regenerated with fresh keys)
+rm -f "$SCRIPT_DIR/runtime_hook.py"
 echo -e "${GREEN}Cleaned.${NC}"
 
 # Run PyInstaller

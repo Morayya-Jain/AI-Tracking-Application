@@ -566,16 +566,9 @@ class PaymentScreen:
                 self.session_entry.show_info(message)
             return
 
-        # For other messages (success, polling, etc), use the global status label
-        if self.status_label:
-            if is_error:
-                color = COLORS["status_gadget"]  # Red
-            elif is_success:
-                color = COLORS["button_start"]  # Green
-            else:
-                color = COLORS["text_secondary"]  # Gray
-            
-            self.status_label.config(text=message, fg=color)
+        # Other messages - don't display in global status area
+        # (input-specific messages are handled above, global status messages are suppressed)
+        return
     
     def _start_payment_polling(self, session_id: str):
         """
