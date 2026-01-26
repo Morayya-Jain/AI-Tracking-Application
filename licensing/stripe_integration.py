@@ -15,16 +15,24 @@ from typing import Optional, Dict, Any, Tuple
 
 logger = logging.getLogger(__name__)
 
+# Global variable to store the resolved certificate path
+_CERT_PATH = None
+
 # Fix SSL certificates for bundled apps (PyInstaller)
-# This must be done BEFORE importing stripe
+# This must be done BEFORE importing stripe/httpx
 def _fix_ssl_certificates():
     """
     Fix SSL certificate paths for PyInstaller bundles.
     
-    PyInstaller's certifi hook should handle this automatically, but we set
-    environment variables as a backup for libraries that don't use certifi directly.
+    This function:
+    1. Finds the correct certificate path for bundled apps
+    2. Sets environment variables for libraries that use them
+    3. Patches certifi.where() to return the correct path
+    4. Configures httpx to use the correct certificates
+    
     Works on both macOS and Windows.
     """
+    global _CERT_PATH
     cert_path = None
     
     # Check if we're running from a PyInstaller bundle
@@ -59,25 +67,10 @@ def _fix_ssl_certificates():
         if not cert_path:
             logger.warning(f"Could not find certificates in bundle. Searched: {bundle_cert_paths}")
     
-    # Try certifi module if bundle search didn't find anything
-    if not cert_path:
-        try:
-            import certifi
-            certifi_path = certifi.where()
-            if os.path.exists(certifi_path):
-                cert_path = certifi_path
-                logger.debug(f"Using certifi SSL certificates: {cert_path}")
-            else:
-                logger.warning(f"certifi.where() returned non-existent path: {certifi_path}")
-        except ImportError:
-            logger.debug("certifi not available")
-        except Exception as e:
-            logger.warning(f"Error getting certifi path: {e}")
-    
-    # Platform-specific fallback locations (for both bundled and non-bundled)
+    # Platform-specific fallback locations (check BEFORE certifi to use system certs)
     if not cert_path:
         if sys.platform == "darwin":
-            # macOS system certificate locations
+            # macOS system certificate locations - these always work
             macos_certs = [
                 '/etc/ssl/cert.pem',
                 '/private/etc/ssl/cert.pem',
@@ -103,17 +96,46 @@ def _fix_ssl_certificates():
             except Exception:
                 pass
     
+    # Try certifi module as last resort
+    if not cert_path:
+        try:
+            import certifi
+            certifi_path = certifi.where()
+            if os.path.exists(certifi_path):
+                cert_path = certifi_path
+                logger.debug(f"Using certifi SSL certificates: {cert_path}")
+            else:
+                logger.warning(f"certifi.where() returned non-existent path: {certifi_path}")
+        except ImportError:
+            logger.debug("certifi not available")
+        except Exception as e:
+            logger.warning(f"Error getting certifi path: {e}")
+    
     if cert_path:
+        _CERT_PATH = cert_path
+        
+        # Set environment variables
         os.environ['SSL_CERT_FILE'] = cert_path
         os.environ['REQUESTS_CA_BUNDLE'] = cert_path
         os.environ['CURL_CA_BUNDLE'] = cert_path
+        
+        # Patch certifi.where() to return our path (httpx uses certifi internally)
+        try:
+            import certifi
+            certifi.where = lambda: cert_path
+            logger.debug("Patched certifi.where() to return correct path")
+        except ImportError:
+            pass
+        
         logger.info(f"SSL certificates configured: {cert_path}")
     else:
         # Log warning but don't fail - some systems use built-in certificate stores
         logger.warning("Could not find SSL certificates - relying on system defaults")
+    
+    return cert_path
 
 # Apply SSL fix before importing stripe
-_fix_ssl_certificates()
+_CERT_PATH = _fix_ssl_certificates()
 
 # Stripe SDK - imported conditionally to handle missing dependency gracefully
 try:
