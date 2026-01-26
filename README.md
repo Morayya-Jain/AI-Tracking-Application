@@ -189,6 +189,18 @@ Per [OpenAI's API Data Usage Policy](https://openai.com/policies/api-data-usage-
 - **Reports**: PDF files saved to your Downloads folder
 - **Frames**: Captured for analysis but never saved to disk
 
+## Troubleshooting
+
+### Reset License/Authentication Status
+
+If you need to reset your Stripe authentication status (e.g., to test the payment flow again or switch accounts), delete the license file:
+
+```bash
+rm ~/Library/Application\ Support/BrainDock/license.json
+```
+
+This will clear your saved license and prompt you to authenticate again on next launch.
+
 ## Future Enhancements
 
 - macOS/Windows packaging (.app/.exe)

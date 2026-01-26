@@ -4651,6 +4651,39 @@ By clicking 'I Understand', you acknowledge this data processing."""
         self.timer_label.configure(text="00:00:00")
         self.timer_sub_label.configure(text="Session Duration")
     
+    def _reset_to_idle_state(self):
+        """
+        Fully reset the UI to idle state.
+        
+        Used when session fails to start (e.g., camera permission denied).
+        Resets all UI elements that were changed during session start attempt.
+        """
+        # Reset running state
+        self.is_running = False
+        self.session_started = False
+        self.session = None
+        self.should_stop.clear()
+        
+        # Reset pause state
+        self.is_paused = False
+        self.pause_start_time = None
+        self.total_paused_seconds = 0.0
+        self.frozen_active_seconds = 0
+        
+        # Hide pause button (was shown during session start)
+        self.pause_btn.pack_forget()
+        
+        # Show mode selector (was hidden during session start)
+        self._show_mode_selector()
+        
+        # Restore stats panel layout
+        self.controls_container.pack_forget()
+        self.stats_container.pack(side=tk.LEFT, padx=(0, 40), anchor="n")
+        self.controls_container.pack(side=tk.LEFT, anchor="n")
+        
+        # Reset button state
+        self._reset_button_state()
+    
     def _open_file(self, filepath: Path):
         """
         Open a file with the system's default application.
@@ -4691,9 +4724,10 @@ By clicking 'I Understand', you acknowledge this data processing."""
                 "• No other app is using the camera"
             )
         
-        messagebox.showerror("Camera Error", message)
-        self._reset_button_state()
+        # Fully reset UI to idle state (including pause button, stats panel, etc.)
+        self._reset_to_idle_state()
         self._update_status("idle", "Ready to Start")
+        messagebox.showerror("Camera Error", message)
     
     def _show_detection_error(self, error: str):
         """
@@ -4702,12 +4736,13 @@ By clicking 'I Understand', you acknowledge this data processing."""
         Args:
             error: Error message
         """
+        # Fully reset UI to idle state (including pause button, stats panel, etc.)
+        self._reset_to_idle_state()
+        self._update_status("idle", "Ready to Start")
         messagebox.showerror(
             "Detection Error",
             f"An error occurred during detection:\n\n{error}"
         )
-        self._reset_button_state()
-        self._update_status("idle", "Ready to Start")
     
     def _on_close(self):
         """Handle window close event."""

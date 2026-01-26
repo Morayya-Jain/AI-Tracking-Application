@@ -2,6 +2,8 @@
 
 import cv2
 import logging
+import sys
+import time
 from typing import Optional, Iterator, Tuple
 import numpy as np
 import config
@@ -94,7 +96,22 @@ class CameraCapture:
             # Verify camera actually works by reading a test frame
             # On macOS, isOpened() can return True even without camera permission
             # The permission prompt only appears when we try to read a frame
-            ret, test_frame = self.cap.read()
+            #
+            # Important: On macOS, when the camera permission dialog first appears,
+            # cap.read() may fail while the user is still responding to the dialog.
+            # We retry a few times with delays to give the user time to grant permission.
+            max_read_attempts = 10 if sys.platform == "darwin" else 3
+            read_delay = 0.5  # Wait between retries to give user time to respond to dialog
+            
+            for attempt in range(max_read_attempts):
+                ret, test_frame = self.cap.read()
+                if ret and test_frame is not None:
+                    break
+                    
+                if attempt < max_read_attempts - 1:
+                    logger.debug(f"Camera read attempt {attempt + 1} failed, retrying in {read_delay}s...")
+                    time.sleep(read_delay)
+            
             if not ret or test_frame is None:
                 logger.error("Camera opened but cannot read frames - permission may be denied")
                 self.cap.release()
