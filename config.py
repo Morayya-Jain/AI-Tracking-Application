@@ -93,13 +93,19 @@ VISION_PROVIDER = os.getenv("VISION_PROVIDER", "gemini")
 
 # --- API Key Configuration ---
 # For bundled builds, API keys can be embedded at build time.
-# The build process injects keys via environment variables before bundling.
-# Priority: 1) Environment variable, 2) Bundled key (if any)
+# The build process creates bundled_keys.py with the actual key values.
+# Priority: 1) Environment variable, 2) Bundled key module, 3) Empty string
 
-# Bundled API keys (injected at build time, DO NOT commit actual keys)
-# These are placeholders that get replaced during the build process
-_BUNDLED_OPENAI_KEY = os.getenv("BUNDLED_OPENAI_API_KEY", "")
-_BUNDLED_GEMINI_KEY = os.getenv("BUNDLED_GEMINI_API_KEY", "")
+# Try to import bundled keys (generated at build time)
+try:
+    import bundled_keys
+    _BUNDLED_OPENAI_KEY = bundled_keys.get_key("OPENAI_API_KEY")
+    _BUNDLED_GEMINI_KEY = bundled_keys.get_key("GEMINI_API_KEY")
+except ImportError:
+    # Development mode or bundled_keys not available
+    # Fall back to environment variables (old method, for backwards compatibility)
+    _BUNDLED_OPENAI_KEY = os.getenv("BUNDLED_OPENAI_API_KEY", "")
+    _BUNDLED_GEMINI_KEY = os.getenv("BUNDLED_GEMINI_API_KEY", "")
 
 
 def _get_api_key(env_var: str, bundled_key: str) -> str:
@@ -208,10 +214,18 @@ USAGE_DATA_FILE = USER_DATA_DIR / "usage_data.json"  # User data (persists)
 
 # Stripe Payment Configuration
 # Get your keys from: https://dashboard.stripe.com/apikeys
-# Bundled Stripe keys (injected at build time)
-_BUNDLED_STRIPE_SECRET = os.getenv("BUNDLED_STRIPE_SECRET_KEY", "")
-_BUNDLED_STRIPE_PUBLISHABLE = os.getenv("BUNDLED_STRIPE_PUBLISHABLE_KEY", "")
-_BUNDLED_STRIPE_PRICE_ID = os.getenv("BUNDLED_STRIPE_PRICE_ID", "")
+# Bundled Stripe keys (from bundled_keys.py generated at build time)
+try:
+    import bundled_keys
+    _BUNDLED_STRIPE_SECRET = bundled_keys.get_key("STRIPE_SECRET_KEY")
+    _BUNDLED_STRIPE_PUBLISHABLE = bundled_keys.get_key("STRIPE_PUBLISHABLE_KEY")
+    _BUNDLED_STRIPE_PRICE_ID = bundled_keys.get_key("STRIPE_PRICE_ID")
+except ImportError:
+    # Development mode or bundled_keys not available
+    # Fall back to environment variables (old method, for backwards compatibility)
+    _BUNDLED_STRIPE_SECRET = os.getenv("BUNDLED_STRIPE_SECRET_KEY", "")
+    _BUNDLED_STRIPE_PUBLISHABLE = os.getenv("BUNDLED_STRIPE_PUBLISHABLE_KEY", "")
+    _BUNDLED_STRIPE_PRICE_ID = os.getenv("BUNDLED_STRIPE_PRICE_ID", "")
 
 STRIPE_SECRET_KEY = _get_api_key("STRIPE_SECRET_KEY", _BUNDLED_STRIPE_SECRET)
 STRIPE_PUBLISHABLE_KEY = _get_api_key("STRIPE_PUBLISHABLE_KEY", _BUNDLED_STRIPE_PUBLISHABLE)

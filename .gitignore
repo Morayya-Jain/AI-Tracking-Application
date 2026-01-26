@@ -30,8 +30,12 @@ build/icon.icns
 build/icon.ico
 build/*.iconset/
 
-# Generated runtime hook with embedded API keys (NEVER commit)
+# Generated DMG background (regenerate with build/create_dmg_background.py)
+build/dmg_background.png
+
+# Generated files with embedded API keys (NEVER commit)
 build/runtime_hook.py
+bundled_keys.py
 
 # Virtual environments
 venv/

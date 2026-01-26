@@ -56,7 +56,7 @@ jobs:
       - name: Generate icons
         run: python build/create_icons.py
       
-      - name: Generate runtime hook with embedded keys
+      - name: Generate bundled keys module
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -66,19 +66,30 @@ jobs:
         shell: python
         run: |
           import os
-          # Read template
-          with open('build/runtime_hook_template.py', 'r') as f:
+          
+          # Generate bundled_keys.py (primary method - imported by config.py)
+          with open('bundled_keys_template.py', 'r') as f:
               content = f.read()
-          # Replace placeholders with actual values from environment
           content = content.replace('%%OPENAI_API_KEY%%', os.environ.get('OPENAI_API_KEY', ''))
           content = content.replace('%%GEMINI_API_KEY%%', os.environ.get('GEMINI_API_KEY', ''))
           content = content.replace('%%STRIPE_SECRET_KEY%%', os.environ.get('STRIPE_SECRET_KEY', ''))
           content = content.replace('%%STRIPE_PUBLISHABLE_KEY%%', os.environ.get('STRIPE_PUBLISHABLE_KEY', ''))
           content = content.replace('%%STRIPE_PRICE_ID%%', os.environ.get('STRIPE_PRICE_ID', ''))
-          # Write runtime hook
+          with open('bundled_keys.py', 'w') as f:
+              f.write(content)
+          print("bundled_keys.py generated with embedded keys")
+          
+          # Also generate runtime hook (backup method)
+          with open('build/runtime_hook_template.py', 'r') as f:
+              content = f.read()
+          content = content.replace('%%OPENAI_API_KEY%%', os.environ.get('OPENAI_API_KEY', ''))
+          content = content.replace('%%GEMINI_API_KEY%%', os.environ.get('GEMINI_API_KEY', ''))
+          content = content.replace('%%STRIPE_SECRET_KEY%%', os.environ.get('STRIPE_SECRET_KEY', ''))
+          content = content.replace('%%STRIPE_PUBLISHABLE_KEY%%', os.environ.get('STRIPE_PUBLISHABLE_KEY', ''))
+          content = content.replace('%%STRIPE_PRICE_ID%%', os.environ.get('STRIPE_PRICE_ID', ''))
           with open('build/runtime_hook.py', 'w') as f:
               f.write(content)
-          print("Runtime hook generated with embedded keys")
+          print("Runtime hook generated")
       
       - name: Build with PyInstaller
         run: |
@@ -143,7 +154,7 @@ jobs:
       - name: Generate icons
         run: python build/create_icons.py
       
-      - name: Generate runtime hook with embedded keys
+      - name: Generate bundled keys module
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -153,19 +164,30 @@ jobs:
         shell: python
         run: |
           import os
-          # Read template
-          with open('build/runtime_hook_template.py', 'r') as f:
+          
+          # Generate bundled_keys.py (primary method - imported by config.py)
+          with open('bundled_keys_template.py', 'r') as f:
               content = f.read()
-          # Replace placeholders with actual values from environment
           content = content.replace('%%OPENAI_API_KEY%%', os.environ.get('OPENAI_API_KEY', ''))
           content = content.replace('%%GEMINI_API_KEY%%', os.environ.get('GEMINI_API_KEY', ''))
           content = content.replace('%%STRIPE_SECRET_KEY%%', os.environ.get('STRIPE_SECRET_KEY', ''))
           content = content.replace('%%STRIPE_PUBLISHABLE_KEY%%', os.environ.get('STRIPE_PUBLISHABLE_KEY', ''))
           content = content.replace('%%STRIPE_PRICE_ID%%', os.environ.get('STRIPE_PRICE_ID', ''))
-          # Write runtime hook
+          with open('bundled_keys.py', 'w') as f:
+              f.write(content)
+          print("bundled_keys.py generated with embedded keys")
+          
+          # Also generate runtime hook (backup method)
+          with open('build/runtime_hook_template.py', 'r') as f:
+              content = f.read()
+          content = content.replace('%%OPENAI_API_KEY%%', os.environ.get('OPENAI_API_KEY', ''))
+          content = content.replace('%%GEMINI_API_KEY%%', os.environ.get('GEMINI_API_KEY', ''))
+          content = content.replace('%%STRIPE_SECRET_KEY%%', os.environ.get('STRIPE_SECRET_KEY', ''))
+          content = content.replace('%%STRIPE_PUBLISHABLE_KEY%%', os.environ.get('STRIPE_PUBLISHABLE_KEY', ''))
+          content = content.replace('%%STRIPE_PRICE_ID%%', os.environ.get('STRIPE_PRICE_ID', ''))
           with open('build/runtime_hook.py', 'w') as f:
               f.write(content)
-          print("Runtime hook generated with embedded keys")
+          print("Runtime hook generated")
       
       - name: Build with PyInstaller
         run: |

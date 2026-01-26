@@ -46,6 +46,9 @@ datas = [
 
 # Hidden imports - modules that PyInstaller might miss
 hiddenimports = [
+    # Bundled API keys module (generated at build time)
+    'bundled_keys',
+    
     # OpenAI and HTTP clients
     'openai',
     'openai.resources',

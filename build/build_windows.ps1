@@ -93,37 +93,58 @@ if (Test-Path "$ProjectRoot\dist\BrainDock") {
 if (Test-Path "$ProjectRoot\build\BrainDock") {
     Remove-Item -Recurse -Force "$ProjectRoot\build\BrainDock"
 }
-# Clean any previously generated runtime hook
+# Clean previously generated key files (will be regenerated with fresh keys)
 if (Test-Path "$ScriptDir\runtime_hook.py") {
     Remove-Item -Force "$ScriptDir\runtime_hook.py"
 }
+if (Test-Path "$ProjectRoot\bundled_keys.py") {
+    Remove-Item -Force "$ProjectRoot\bundled_keys.py"
+}
 Write-Host "Cleaned." -ForegroundColor Green
 
-# Generate runtime hook with embedded API keys
+# Generate bundled_keys.py with embedded API keys
 Write-Host ""
-Write-Host "Generating runtime hook with embedded keys..." -ForegroundColor Yellow
+Write-Host "Generating bundled_keys.py with embedded keys..." -ForegroundColor Yellow
 
-$RuntimeHook = "$ScriptDir\runtime_hook.py"
-$RuntimeHookTemplate = "$ScriptDir\runtime_hook_template.py"
+$BundledKeys = "$ProjectRoot\bundled_keys.py"
+$BundledKeysTemplate = "$ProjectRoot\bundled_keys_template.py"
 
-if (Test-Path $RuntimeHookTemplate) {
+if (Test-Path $BundledKeysTemplate) {
     # Read template
-    $content = Get-Content $RuntimeHookTemplate -Raw
+    $content = Get-Content $BundledKeysTemplate -Raw
     
-    # Replace placeholders with actual values
+    # Replace placeholders with actual values (handle special regex characters)
     $content = $content -replace '%%OPENAI_API_KEY%%', ($env:OPENAI_API_KEY -replace '\$', '$$$$')
     $content = $content -replace '%%GEMINI_API_KEY%%', ($env:GEMINI_API_KEY -replace '\$', '$$$$')
     $content = $content -replace '%%STRIPE_SECRET_KEY%%', ($env:STRIPE_SECRET_KEY -replace '\$', '$$$$')
     $content = $content -replace '%%STRIPE_PUBLISHABLE_KEY%%', ($env:STRIPE_PUBLISHABLE_KEY -replace '\$', '$$$$')
     $content = $content -replace '%%STRIPE_PRICE_ID%%', ($env:STRIPE_PRICE_ID -replace '\$', '$$$$')
     
-    # Write runtime hook (UTF-8 without BOM for Python compatibility)
-    [System.IO.File]::WriteAllText($RuntimeHook, $content, [System.Text.UTF8Encoding]::new($false))
+    # Write bundled_keys.py (UTF-8 without BOM for Python compatibility)
+    [System.IO.File]::WriteAllText($BundledKeys, $content, [System.Text.UTF8Encoding]::new($false))
     
-    Write-Host "Runtime hook generated with embedded keys." -ForegroundColor Green
+    Write-Host "bundled_keys.py generated with embedded keys." -ForegroundColor Green
 } else {
-    Write-Host "Error: Runtime hook template not found at $RuntimeHookTemplate" -ForegroundColor Red
+    Write-Host "Error: Bundled keys template not found at $BundledKeysTemplate" -ForegroundColor Red
     exit 1
+}
+
+# Also generate runtime hook for backwards compatibility
+Write-Host ""
+Write-Host "Generating runtime hook..." -ForegroundColor Yellow
+
+$RuntimeHook = "$ScriptDir\runtime_hook.py"
+$RuntimeHookTemplate = "$ScriptDir\runtime_hook_template.py"
+
+if (Test-Path $RuntimeHookTemplate) {
+    $content = Get-Content $RuntimeHookTemplate -Raw
+    $content = $content -replace '%%OPENAI_API_KEY%%', ($env:OPENAI_API_KEY -replace '\$', '$$$$')
+    $content = $content -replace '%%GEMINI_API_KEY%%', ($env:GEMINI_API_KEY -replace '\$', '$$$$')
+    $content = $content -replace '%%STRIPE_SECRET_KEY%%', ($env:STRIPE_SECRET_KEY -replace '\$', '$$$$')
+    $content = $content -replace '%%STRIPE_PUBLISHABLE_KEY%%', ($env:STRIPE_PUBLISHABLE_KEY -replace '\$', '$$$$')
+    $content = $content -replace '%%STRIPE_PRICE_ID%%', ($env:STRIPE_PRICE_ID -replace '\$', '$$$$')
+    [System.IO.File]::WriteAllText($RuntimeHook, $content, [System.Text.UTF8Encoding]::new($false))
+    Write-Host "Runtime hook generated." -ForegroundColor Green
 }
 
 # Run PyInstaller

@@ -117,31 +117,47 @@ else
     echo -e "${YELLOW}Warning: Stripe keys not provided. Payment features will be disabled.${NC}"
 fi
 
-# Generate runtime hook with embedded API keys
-# This is critical - environment variables don't persist into bundled apps,
-# so we need to embed the actual values into a Python file that runs at startup
+# Generate bundled_keys.py with embedded API keys
+# This module is imported by config.py to get the actual key values
 echo ""
-echo -e "${YELLOW}Generating runtime hook with embedded keys...${NC}"
+echo -e "${YELLOW}Generating bundled_keys.py with embedded keys...${NC}"
+
+BUNDLED_KEYS="$PROJECT_ROOT/bundled_keys.py"
+BUNDLED_KEYS_TEMPLATE="$PROJECT_ROOT/bundled_keys_template.py"
+
+if [[ -f "$BUNDLED_KEYS_TEMPLATE" ]]; then
+    # Copy template and replace placeholders with actual values
+    cp "$BUNDLED_KEYS_TEMPLATE" "$BUNDLED_KEYS"
+    
+    # Use sed to replace placeholders (handle special characters in keys)
+    # We use | as delimiter since keys might contain /
+    sed -i '' "s|%%OPENAI_API_KEY%%|${OPENAI_API_KEY:-}|g" "$BUNDLED_KEYS"
+    sed -i '' "s|%%GEMINI_API_KEY%%|${GEMINI_API_KEY}|g" "$BUNDLED_KEYS"
+    sed -i '' "s|%%STRIPE_SECRET_KEY%%|${STRIPE_SECRET_KEY:-}|g" "$BUNDLED_KEYS"
+    sed -i '' "s|%%STRIPE_PUBLISHABLE_KEY%%|${STRIPE_PUBLISHABLE_KEY:-}|g" "$BUNDLED_KEYS"
+    sed -i '' "s|%%STRIPE_PRICE_ID%%|${STRIPE_PRICE_ID:-}|g" "$BUNDLED_KEYS"
+    
+    echo -e "${GREEN}bundled_keys.py generated with embedded keys.${NC}"
+else
+    echo -e "${RED}Error: Bundled keys template not found at $BUNDLED_KEYS_TEMPLATE${NC}"
+    exit 1
+fi
+
+# Also generate runtime hook for backwards compatibility
+echo ""
+echo -e "${YELLOW}Generating runtime hook...${NC}"
 
 RUNTIME_HOOK="$SCRIPT_DIR/runtime_hook.py"
 RUNTIME_HOOK_TEMPLATE="$SCRIPT_DIR/runtime_hook_template.py"
 
 if [[ -f "$RUNTIME_HOOK_TEMPLATE" ]]; then
-    # Copy template and replace placeholders with actual values
     cp "$RUNTIME_HOOK_TEMPLATE" "$RUNTIME_HOOK"
-    
-    # Use sed to replace placeholders (handle special characters in keys)
-    # We use | as delimiter since keys might contain /
     sed -i '' "s|%%OPENAI_API_KEY%%|${OPENAI_API_KEY:-}|g" "$RUNTIME_HOOK"
     sed -i '' "s|%%GEMINI_API_KEY%%|${GEMINI_API_KEY}|g" "$RUNTIME_HOOK"
     sed -i '' "s|%%STRIPE_SECRET_KEY%%|${STRIPE_SECRET_KEY:-}|g" "$RUNTIME_HOOK"
     sed -i '' "s|%%STRIPE_PUBLISHABLE_KEY%%|${STRIPE_PUBLISHABLE_KEY:-}|g" "$RUNTIME_HOOK"
     sed -i '' "s|%%STRIPE_PRICE_ID%%|${STRIPE_PRICE_ID:-}|g" "$RUNTIME_HOOK"
-    
-    echo -e "${GREEN}Runtime hook generated with embedded keys.${NC}"
-else
-    echo -e "${RED}Error: Runtime hook template not found at $RUNTIME_HOOK_TEMPLATE${NC}"
-    exit 1
+    echo -e "${GREEN}Runtime hook generated.${NC}"
 fi
 
 # Clean previous builds
@@ -150,8 +166,9 @@ echo -e "${YELLOW}Cleaning previous builds...${NC}"
 rm -rf "$PROJECT_ROOT/dist/BrainDock"
 rm -rf "$PROJECT_ROOT/dist/BrainDock.app"
 rm -rf "$PROJECT_ROOT/build/BrainDock"
-# Also clean any previously generated runtime hook (will be regenerated with fresh keys)
+# Clean previously generated key files (will be regenerated with fresh keys)
 rm -f "$SCRIPT_DIR/runtime_hook.py"
+rm -f "$PROJECT_ROOT/bundled_keys.py"
 echo -e "${GREEN}Cleaned.${NC}"
 
 # Run PyInstaller
@@ -187,25 +204,53 @@ if [[ -d "$PROJECT_ROOT/dist/BrainDock.app" ]]; then
     DMG_NAME="BrainDock-${VERSION}-macOS.dmg"
     DMG_PATH="$PROJECT_ROOT/dist/$DMG_NAME"
     
-    # Clean up any existing DMG or staging folder
+    # Clean up any existing DMG
     rm -f "$DMG_PATH"
-    rm -rf "$PROJECT_ROOT/dist/dmg-staging"
     
-    # Create staging folder with app and Applications symlink
-    mkdir -p "$PROJECT_ROOT/dist/dmg-staging"
-    cp -R "$PROJECT_ROOT/dist/BrainDock.app" "$PROJECT_ROOT/dist/dmg-staging/"
-    ln -s /Applications "$PROJECT_ROOT/dist/dmg-staging/Applications"
+    # Generate DMG background image with arrow
+    echo -e "${YELLOW}Generating DMG background...${NC}"
+    python3 "$SCRIPT_DIR/create_dmg_background.py"
+    DMG_BACKGROUND="$SCRIPT_DIR/dmg_background.png"
     
-    # Create the DMG using hdiutil
-    hdiutil create \
-        -volname "BrainDock" \
-        -srcfolder "$PROJECT_ROOT/dist/dmg-staging" \
-        -ov \
-        -format UDZO \
-        "$DMG_PATH"
+    if [[ ! -f "$DMG_BACKGROUND" ]]; then
+        echo -e "${RED}Error: Failed to generate DMG background${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}DMG background generated.${NC}"
     
-    # Clean up staging folder
-    rm -rf "$PROJECT_ROOT/dist/dmg-staging"
+    # Check if create-dmg is installed
+    if ! command -v create-dmg &> /dev/null; then
+        echo ""
+        echo -e "${YELLOW}Installing create-dmg via Homebrew...${NC}"
+        if command -v brew &> /dev/null; then
+            brew install create-dmg
+        else
+            echo -e "${RED}Error: Homebrew not found. Please install create-dmg manually:${NC}"
+            echo "  brew install create-dmg"
+            echo ""
+            echo "Or install Homebrew first: https://brew.sh"
+            exit 1
+        fi
+    fi
+    
+    echo -e "${YELLOW}Creating styled DMG with create-dmg...${NC}"
+    
+    # Create the DMG using create-dmg with professional styling
+    # Icon positions: BrainDock.app at (180, 190), Applications at (480, 190)
+    # These match the background image layout
+    create-dmg \
+        --volname "BrainDock" \
+        --volicon "$SCRIPT_DIR/icon.icns" \
+        --background "$DMG_BACKGROUND" \
+        --window-pos 200 120 \
+        --window-size 660 400 \
+        --icon-size 100 \
+        --icon "BrainDock.app" 180 190 \
+        --hide-extension "BrainDock.app" \
+        --app-drop-link 480 190 \
+        --no-internet-enable \
+        "$DMG_PATH" \
+        "$PROJECT_ROOT/dist/BrainDock.app"
     
     # Check if DMG was created
     if [[ -f "$DMG_PATH" ]]; then
@@ -227,9 +272,10 @@ if [[ -d "$PROJECT_ROOT/dist/BrainDock.app" ]]; then
         echo -e "${YELLOW}User experience:${NC}"
         echo "  1. User downloads $DMG_NAME"
         echo "  2. Double-clicks to mount"
-        echo "  3. Drags BrainDock to Applications folder"
-        echo "  4. Ejects the DMG"
-        echo "  5. Launches from Applications (right-click > Open first time)"
+        echo "  3. Sees BrainDock icon with arrow pointing to Applications"
+        echo "  4. Drags BrainDock to Applications folder"
+        echo "  5. Ejects the DMG"
+        echo "  6. Launches from Applications (right-click > Open first time)"
     else
         echo -e "${RED}Error: Failed to create DMG${NC}"
         exit 1
