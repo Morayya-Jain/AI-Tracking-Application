@@ -285,7 +285,7 @@ except ImportError:
 STRIPE_SECRET_KEY = _get_api_key("STRIPE_SECRET_KEY", _BUNDLED_STRIPE_SECRET, "stripe_secret")
 STRIPE_PUBLISHABLE_KEY = _get_api_key("STRIPE_PUBLISHABLE_KEY", _BUNDLED_STRIPE_PUBLISHABLE, "stripe_publishable")
 STRIPE_PRICE_ID = _get_api_key("STRIPE_PRICE_ID", _BUNDLED_STRIPE_PRICE_ID)  # No validation for price ID
-PRODUCT_PRICE_DISPLAY = os.getenv("PRODUCT_PRICE_DISPLAY", "One-time payment")  # Display text
+PRODUCT_PRICE_DISPLAY = os.getenv("PRODUCT_PRICE_DISPLAY", "AUD 1.99 - One-time payment for unlimited use")  # Display text
 # Require Terms of Service acceptance at checkout (must configure T&C URL in Stripe Dashboard first)
 STRIPE_REQUIRE_TERMS = os.getenv("STRIPE_REQUIRE_TERMS", "").lower() in ("true", "1", "yes")
 
