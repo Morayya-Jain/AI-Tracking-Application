@@ -423,7 +423,7 @@ class PaymentScreen:
         # 1. Title Section
         tk.Label(self.inner_frame, text="Activate Session", font=FONTS["heading"], bg=COLORS["surface"], fg=COLORS["text_primary"]).pack(pady=(20, 15))
         
-        price_text = "AUD 4.99"
+        price_text = "AUD 1.99"
         if hasattr(config, 'PRODUCT_PRICE_DISPLAY'):
             price_text = config.PRODUCT_PRICE_DISPLAY.split(" - ")[0] if " - " in config.PRODUCT_PRICE_DISPLAY else config.PRODUCT_PRICE_DISPLAY
 
