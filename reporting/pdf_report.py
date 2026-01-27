@@ -1077,25 +1077,26 @@ def generate_report(
     # Track which rows we add for color coding later
     row_types = []
     
-    # Add rows only if they have at least 1 second (already truncated to int)
-    if present_secs > 0:
+    # Add rows only if they have at least 1 second after truncation
+    # Check int(value) to avoid showing "0s" for sub-second values
+    if int(present_secs) > 0:
         stats_data.append(['Focussed', _format_time_seconds(present_secs)])
         row_types.append('present')
     
-    if away_secs > 0:
+    if int(away_secs) > 0:
         stats_data.append(['Away from Desk', _format_time_seconds(away_secs)])
         row_types.append('away')
     
-    if gadget_secs > 0:
+    if int(gadget_secs) > 0:
         stats_data.append(['Gadget Usage', _format_time_seconds(gadget_secs)])
         row_types.append('gadget')
     
-    if screen_distraction_secs > 0:
+    if int(screen_distraction_secs) > 0:
         stats_data.append(['Screen Distraction', _format_time_seconds(screen_distraction_secs)])
         row_types.append('screen')
     
     # Add paused time row only if > 0 (will be styled in italic grey)
-    if paused_secs > 0:
+    if int(paused_secs) > 0:
         stats_data.append(['Paused', _format_time_seconds(paused_secs)])
         row_types.append('paused')
     
@@ -1176,14 +1177,14 @@ def generate_report(
     events = stats.get('events', [])
     
     if events:
-        # Filter out events with 0 duration (durations are already truncated to int)
+        # Get duration in seconds (keep as float for precision)
         def get_duration_seconds(e):
             if 'duration_seconds' in e:
                 return e['duration_seconds']
-            return int(e.get('duration_minutes', 0) * 60)
+            return e.get('duration_minutes', 0) * 60
         
-        # Only show events with at least 1 second
-        non_zero_events = [e for e in events if get_duration_seconds(e) > 0]
+        # Only show events with at least 1 second after truncation (for display)
+        non_zero_events = [e for e in events if int(get_duration_seconds(e)) > 0]
         
         if non_zero_events:
             # Build table with ALL events (no limit)
