@@ -144,37 +144,65 @@ jobs:
           ENTITLEMENTS="build/entitlements.plist"
           
           echo "Signing with identity: $IDENTITY"
+          echo "Finding and signing all Mach-O binaries..."
           
-          # Sign all nested components first
-          find dist/BrainDock.app -name "*.dylib" -o -name "*.so" -o -name "*.framework" | while read -r file; do
+          # Find and sign ALL Mach-O binaries (dylib, so, executables)
+          # Use proper grouping for find command
+          find dist/BrainDock.app -type f \( -name "*.dylib" -o -name "*.so" -o -name "*.bundle" \) | while read -r file; do
+            echo "Signing: $file"
             codesign --force --options runtime --timestamp \
               --entitlements "$ENTITLEMENTS" \
               --sign "$IDENTITY" \
-              "$file" 2>/dev/null || true
+              "$file"
           done
           
-          # Sign Python executables
-          find dist/BrainDock.app -name "python*" -type f -perm +111 | while read -r file; do
+          # Sign all frameworks (directories)
+          find dist/BrainDock.app -type d -name "*.framework" | while read -r framework; do
+            echo "Signing framework: $framework"
             codesign --force --options runtime --timestamp \
               --entitlements "$ENTITLEMENTS" \
               --sign "$IDENTITY" \
-              "$file" 2>/dev/null || true
+              "$framework"
           done
           
-          # Sign the main executable
+          # Sign Python and other executables
+          find dist/BrainDock.app -type f -perm +111 ! -name "*.dylib" ! -name "*.so" | while read -r file; do
+            # Check if it's a Mach-O binary
+            if file "$file" | grep -q "Mach-O"; then
+              echo "Signing executable: $file"
+              codesign --force --options runtime --timestamp \
+                --entitlements "$ENTITLEMENTS" \
+                --sign "$IDENTITY" \
+                "$file"
+            fi
+          done
+          
+          # Sign the main executable explicitly
+          echo "Signing main executable..."
           codesign --force --options runtime --timestamp \
             --entitlements "$ENTITLEMENTS" \
             --sign "$IDENTITY" \
             "dist/BrainDock.app/Contents/MacOS/BrainDock"
           
-          # Sign the entire app bundle
-          codesign --force --options runtime --timestamp \
+          # Deep sign the entire app bundle as final step
+          echo "Deep signing entire app bundle..."
+          codesign --force --deep --options runtime --timestamp \
             --entitlements "$ENTITLEMENTS" \
             --sign "$IDENTITY" \
             "dist/BrainDock.app"
           
-          # Verify signature
-          codesign --verify --verbose=2 dist/BrainDock.app
+          # Verify signature thoroughly
+          echo "Verifying signature..."
+          codesign --verify --verbose=2 --deep --strict dist/BrainDock.app
+          
+          # Check for unsigned code
+          echo "Checking for any unsigned code..."
+          codesign --verify --deep --strict dist/BrainDock.app 2>&1 || {
+            echo "WARNING: Some components may not be properly signed"
+            # List any unsigned binaries
+            find dist/BrainDock.app -type f \( -name "*.dylib" -o -name "*.so" -o -perm +111 \) -exec sh -c 'codesign -v "$1" 2>/dev/null || echo "Unsigned: $1"' _ {} \;
+          }
+          
           echo "App signed successfully!"
       
       - name: Notarize app
@@ -182,16 +210,53 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        timeout-minutes: 30
         run: |
           echo "Creating ZIP for notarization..."
           ditto -c -k --keepParent dist/BrainDock.app dist/BrainDock-notarize.zip
           
+          echo "ZIP file size:"
+          ls -lh dist/BrainDock-notarize.zip
+          
           echo "Submitting to Apple notarization service..."
-          xcrun notarytool submit dist/BrainDock-notarize.zip \
+          
+          # Submit and capture the submission ID
+          SUBMIT_OUTPUT=$(xcrun notarytool submit dist/BrainDock-notarize.zip \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_APP_SPECIFIC_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
-            --wait
+            --wait \
+            --timeout 25m 2>&1) || {
+            echo "Notarization failed or timed out"
+            echo "$SUBMIT_OUTPUT"
+            
+            # Extract submission ID if available
+            SUBMISSION_ID=$(echo "$SUBMIT_OUTPUT" | grep -o 'id: [a-f0-9-]*' | head -1 | cut -d' ' -f2)
+            if [ -n "$SUBMISSION_ID" ]; then
+              echo "Fetching notarization log for submission: $SUBMISSION_ID"
+              xcrun notarytool log "$SUBMISSION_ID" \
+                --apple-id "$APPLE_ID" \
+                --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+                --team-id "$APPLE_TEAM_ID" || true
+            fi
+            exit 1
+          }
+          
+          echo "$SUBMIT_OUTPUT"
+          
+          # Check if notarization was accepted
+          if echo "$SUBMIT_OUTPUT" | grep -q "status: Accepted"; then
+            echo "Notarization accepted!"
+          else
+            echo "Notarization may have issues, checking log..."
+            SUBMISSION_ID=$(echo "$SUBMIT_OUTPUT" | grep -o 'id: [a-f0-9-]*' | head -1 | cut -d' ' -f2)
+            if [ -n "$SUBMISSION_ID" ]; then
+              xcrun notarytool log "$SUBMISSION_ID" \
+                --apple-id "$APPLE_ID" \
+                --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+                --team-id "$APPLE_TEAM_ID" || true
+            fi
+          fi
           
           echo "Stapling notarization ticket..."
           xcrun stapler staple dist/BrainDock.app
@@ -202,6 +267,9 @@ jobs:
       - name: Create signed DMG
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        timeout-minutes: 30
         run: |
           IDENTITY="Developer ID Application: Morayya Jain ($APPLE_TEAM_ID)"
           
@@ -211,6 +279,7 @@ jobs:
           fi
           
           # Create DMG using create-dmg
+          echo "Creating DMG..."
           create-dmg \
             --volname "BrainDock" \
             --volicon "build/icon.icns" \
@@ -225,19 +294,32 @@ jobs:
             "dist/BrainDock-macOS.dmg" \
             "dist/BrainDock.app"
           
+          echo "DMG file size:"
+          ls -lh dist/BrainDock-macOS.dmg
+          
           # Sign the DMG
+          echo "Signing DMG..."
           codesign --force --timestamp \
             --sign "$IDENTITY" \
             "dist/BrainDock-macOS.dmg"
           
-          # Notarize the DMG
+          # Verify DMG signature
+          codesign --verify --verbose dist/BrainDock-macOS.dmg
+          
+          # Notarize the DMG with timeout
+          echo "Notarizing DMG..."
           xcrun notarytool submit dist/BrainDock-macOS.dmg \
-            --apple-id "${{ secrets.APPLE_ID }}" \
-            --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
-            --wait
+            --wait \
+            --timeout 25m || {
+            echo "DMG notarization failed or timed out"
+            exit 1
+          }
           
           # Staple the DMG
+          echo "Stapling DMG..."
           xcrun stapler staple dist/BrainDock-macOS.dmg
           
           echo "DMG created, signed, and notarized!"
