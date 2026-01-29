@@ -167,15 +167,19 @@ class UsageLimiter:
         
         return extension_seconds
     
-    def format_time(self, seconds: int) -> str:
+    def format_time(self, seconds: int, full_precision: bool = False) -> str:
         """
         Format seconds as human-readable time string.
         
         Args:
             seconds: Number of seconds.
+            full_precision: If True, always show all non-zero time components
+                           including seconds even when hours > 0. Default False
+                           for compact display (omits seconds when hours present).
             
         Returns:
             Formatted string like "1h 30m" or "45m" or "30s".
+            With full_precision: "1h 30m 45s" or "2h 0m 0s".
         """
         if seconds < 0:
             return "0s"
@@ -187,29 +191,33 @@ class UsageLimiter:
         parts = []
         if hours > 0:
             parts.append(f"{hours}h")
-        if minutes > 0:
+        if minutes > 0 or (full_precision and hours > 0):
+            # Show minutes if non-zero, or if full_precision and hours exist
             parts.append(f"{minutes}m")
-        if secs > 0 and hours == 0:  # Only show seconds if less than 1 hour
-            parts.append(f"{secs}s")
+        if secs > 0 or full_precision:
+            # Show seconds if non-zero, or always if full_precision
+            if hours == 0 or full_precision:
+                parts.append(f"{secs}s")
         
         return " ".join(parts) if parts else "0s"
     
     def get_status_summary(self) -> str:
         """
-        Get a summary of usage status.
+        Get a summary of usage status with full time precision.
         
         Returns:
-            Human-readable status string.
+            Human-readable status string with exact time values.
         """
         remaining = self.get_remaining_seconds()
         used = self.get_total_used_seconds()
         granted = self.get_total_granted_seconds()
         extensions = self.get_extensions_count()
         
+        # Use full_precision=True for detailed popup display
         summary = (
-            f"Time remaining: {self.format_time(remaining)}\n"
-            f"Time used: {self.format_time(used)}\n"
-            f"Total granted: {self.format_time(granted)}"
+            f"Time remaining: {self.format_time(remaining, full_precision=True)}\n"
+            f"Time used: {self.format_time(used, full_precision=True)}\n"
+            f"Total granted: {self.format_time(granted, full_precision=True)}"
         )
         
         if extensions > 0:

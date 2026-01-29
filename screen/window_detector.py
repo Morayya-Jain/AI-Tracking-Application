@@ -102,9 +102,17 @@ class WindowDetector:
             )
             
             if result.returncode != 0:
+                # Log the error details for debugging
+                logger.warning(f"AppleScript failed with code {result.returncode}: {result.stderr.strip()}")
+                
                 # Permission error - need Accessibility permission
-                if "not allowed" in result.stderr.lower() or "assistive" in result.stderr.lower():
+                stderr_lower = result.stderr.lower()
+                if "not allowed" in stderr_lower or "assistive" in stderr_lower or "-10827" in stderr_lower:
                     logger.warning("Accessibility permission required for screen monitoring")
+                    self._has_permission = False
+                else:
+                    # Other error - still treat as permission issue for safety
+                    logger.warning("AppleScript failed - treating as permission issue")
                     self._has_permission = False
                 return None
             
@@ -305,11 +313,18 @@ class WindowDetector:
             True if permissions are granted, False otherwise.
         """
         if self._permission_checked:
+            logger.debug(f"Using cached permission result: {self._has_permission}")
             return self._has_permission
         
         # Try to get window info - this will set _has_permission
-        self.get_active_window()
+        logger.debug("Testing permission by getting active window...")
+        window_info = self.get_active_window()
         self._permission_checked = True
+        
+        if window_info:
+            logger.debug(f"Permission check passed, got window: {window_info.app_name}")
+        else:
+            logger.warning("Permission check failed - could not get active window")
         
         return self._has_permission
     
@@ -322,12 +337,15 @@ class WindowDetector:
         """
         if self.platform == "darwin":
             return (
-                "Screen monitoring requires Accessibility permission.\n\n"
-                "To enable:\n"
-                "1. Open System Settings\n"
-                "2. Go to Privacy & Security > Accessibility\n"
-                "3. Click the + button and add this application\n"
-                "4. Restart BrainDock"
+                "Screen monitoring requires TWO permissions:\n\n"
+                "1. ACCESSIBILITY permission:\n"
+                "   • System Settings → Privacy & Security → Accessibility\n"
+                "   • Add BrainDock and enable the checkbox\n\n"
+                "2. AUTOMATION permission (System Events):\n"
+                "   • System Settings → Privacy & Security → Automation\n"
+                "   • Enable 'System Events' under BrainDock\n"
+                "   • (This prompt may appear automatically)\n\n"
+                "After enabling, RESTART BrainDock."
             )
         elif self.platform == "win32":
             return (

@@ -5,4 +5,5 @@ reportlab>=4.0.0
 python-dotenv>=1.0.0
 pillow>=10.0.0
 pyobjc-framework-Cocoa>=10.0; sys_platform == 'darwin'
+pyobjc-framework-AVFoundation>=10.0; sys_platform == 'darwin'
 stripe>=7.0.0

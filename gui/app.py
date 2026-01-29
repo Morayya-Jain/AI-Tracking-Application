@@ -110,6 +110,105 @@ def open_macos_camera_settings():
                 subprocess.run(["open", "-a", "System Preferences"], check=True)
 
 
+def open_macos_accessibility_settings():
+    """Open macOS System Settings to Privacy & Security > Accessibility."""
+    if sys.platform == "darwin":
+        try:
+            # macOS Ventura and later use this URL scheme
+            subprocess.run(
+                ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"],
+                check=True
+            )
+        except Exception as e:
+            logger.error(f"Failed to open System Settings: {e}")
+            # Fallback: open System Settings main page
+            try:
+                subprocess.run(["open", "-a", "System Settings"], check=True)
+            except Exception:
+                subprocess.run(["open", "-a", "System Preferences"], check=True)
+
+
+def check_macos_accessibility_permission() -> bool:
+    """
+    Check if the app has permission for screen monitoring on macOS.
+    
+    Screen monitoring needs AppleScript access to System Events (Automation permission).
+    AXIsProcessTrusted is NOT required - only Automation permission matters.
+    
+    Returns:
+        True if permission is granted, False otherwise.
+    """
+    if sys.platform != "darwin":
+        return True  # Non-macOS: assume authorized
+    
+    # The real test: can we actually run AppleScript to get window info?
+    # This tests Automation permission which is what we actually need.
+    return _test_accessibility_with_applescript()
+
+
+def _test_accessibility_with_applescript() -> bool:
+    """
+    Test Accessibility/Automation permission by running a simple AppleScript.
+    
+    This tests if the app can actually use System Events, which requires
+    BOTH Accessibility permission AND Automation permission for System Events.
+    
+    Returns:
+        True if the AppleScript succeeds, False otherwise.
+    """
+    try:
+        # Simple test: try to get the frontmost app name
+        script = '''
+        tell application "System Events"
+            set frontApp to first application process whose frontmost is true
+            return name of frontApp
+        end tell
+        '''
+        
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=5  # Longer timeout in case permission dialog shows
+        )
+        
+        if result.returncode == 0:
+            logger.debug(f"AppleScript test succeeded: {result.stdout.strip()}")
+            return True
+        else:
+            # Check for permission-related errors
+            stderr = result.stderr.lower()
+            
+            # Error codes and messages that indicate permission issues:
+            # -10827: not running (often permission-related)
+            # -1743: user interaction not allowed
+            # -1728: can't get (permission denied)
+            # "not allowed assistive access" - Accessibility permission needed
+            # "not permitted to send apple events" - Automation permission needed
+            
+            permission_indicators = [
+                "not allowed", "assistive", "-10827", "-1743", "-1728",
+                "not permitted", "permission denied", "not authorized"
+            ]
+            
+            is_permission_error = any(ind in stderr for ind in permission_indicators)
+            
+            if is_permission_error:
+                logger.warning(f"Permission denied for AppleScript: {result.stderr.strip()}")
+                return False
+            
+            # Other error - still treat as failure
+            logger.warning(f"AppleScript test failed: {result.stderr.strip()}")
+            return False
+            
+    except subprocess.TimeoutExpired:
+        logger.warning("AppleScript test timed out - may indicate permission dialog is waiting")
+        return False
+    except Exception as e:
+        logger.warning(f"AppleScript test error: {e}")
+        return False
+
+
 # --- Theme System ---
 # Supports light/dark themes (dark mode prepared for future)
 THEMES = {
@@ -211,9 +310,6 @@ def get_colors():
 
 # Active color palette (for backward compatibility)
 COLORS = get_colors()
-
-# Privacy settings file (in user data directory for persistence)
-PRIVACY_FILE = config.USER_DATA_DIR / ".privacy_accepted"
 
 # Assets directory for logos (bundled with app)
 ASSETS_DIR = config.BASE_DIR / "assets"
@@ -1124,9 +1220,6 @@ class BrainDockGUI:
         
         # Bind Enter key to start/stop session
         self.root.bind("<Return>", self._on_enter_key)
-        
-        # Check privacy acceptance
-        self.root.after(100, self._check_privacy)
         
         # Check usage limit status
         self.root.after(200, self._check_usage_limit)
@@ -3450,42 +3543,6 @@ class BrainDockGUI:
         tutorial_window.destroy()
         logger.debug("Tutorial popup closed")
     
-    def _check_privacy(self):
-        """Check if privacy notice has been accepted, show if not."""
-        if not PRIVACY_FILE.exists():
-            self._show_privacy_notice()
-    
-    def _show_privacy_notice(self):
-        """Display the privacy notice popup."""
-        privacy_text = """BrainDock uses OpenAI's Vision API to monitor your focus sessions.
-
-How it works:
-• We capture frames for analysis; we don't store them locally
-• AI detects your presence and gadget distractions
-• All detection happens in real-time
-
-Data Retention:
-• OpenAI retains data for up to 30 days for safety monitoring, then deletes it
-• See OpenAI's API data usage policy: openai.com/policies/api-data-usage-policies
-• No video or images are saved on your device
-
-By clicking 'I Understand', you acknowledge this data processing."""
-        
-        result = messagebox.askokcancel(
-            "Privacy Notice",
-            privacy_text,
-            icon="info"
-        )
-        
-        if result:
-            # Save acceptance
-            PRIVACY_FILE.parent.mkdir(parents=True, exist_ok=True)
-            PRIVACY_FILE.write_text(datetime.now().isoformat())
-            logger.info("Privacy notice accepted")
-        else:
-            # User declined - close app
-            self.root.destroy()
-    
     def _check_usage_limit(self):
         """Check if usage time is exhausted and show lockout if needed."""
         if self.usage_limiter.is_time_exhausted():
@@ -3959,6 +4016,32 @@ By clicking 'I Understand', you acknowledge this data processing."""
                 # For "not_determined", "authorized", or "unknown" - proceed normally
                 # "not_determined" will trigger the macOS permission prompt when camera opens
 
+        # Pre-check screen (Accessibility) permission for screen modes
+        needs_screen = self.monitoring_mode in (config.MODE_SCREEN_ONLY, config.MODE_BOTH)
+        if needs_screen and sys.platform == "darwin":
+            logger.info("Checking Accessibility permission for screen monitoring...")
+            has_permission = check_macos_accessibility_permission()
+            logger.info(f"Accessibility permission check result: {has_permission}")
+            
+            if not has_permission:
+                # Permission not granted - show dialog
+                logger.warning("Accessibility/Automation permission not granted, showing dialog")
+                result = messagebox.askyesno(
+                    "Screen Monitoring Permission Required",
+                    "Screen monitoring requires these permissions:\n\n"
+                    "1. ACCESSIBILITY:\n"
+                    "   Privacy & Security → Accessibility\n"
+                    "   Add BrainDock and enable checkbox\n\n"
+                    "2. AUTOMATION (System Events):\n"
+                    "   Privacy & Security → Automation\n"
+                    "   Enable 'System Events' under BrainDock\n\n"
+                    "After enabling both, RESTART BrainDock.\n\n"
+                    "Would you like to open System Settings?"
+                )
+                if result:
+                    open_macos_accessibility_settings()
+                return
+
         # Initialize session (but don't start yet - wait for first detection)
         self.session = Session()
         self.session_started = False  # Will start on first detection
@@ -4243,13 +4326,18 @@ By clicking 'I Understand', you acknowledge this data processing."""
         Does NOT use AI API calls - purely local pattern matching.
         """
         try:
+            logger.info("Screen detection loop starting...")
             window_detector = WindowDetector()
             
             # Check permissions on first run
+            logger.debug("Checking screen monitoring permission...")
             if not window_detector.check_permission():
+                logger.warning("Screen monitoring permission check failed")
                 instructions = window_detector.get_permission_instructions()
                 self.root.after(0, lambda: self._show_screen_permission_error(instructions))
                 return
+            
+            logger.info("Screen monitoring permission granted, starting detection loop")
             
             last_screen_check = time.time()
             
@@ -4351,17 +4439,34 @@ By clicking 'I Understand', you acknowledge this data processing."""
     def _show_screen_permission_error(self, instructions: str):
         """
         Show an error message when screen monitoring permissions are missing.
+        Uses simple messagebox.askyesno() style like the PDF popup.
         
         Args:
             instructions: Platform-specific permission instructions
         """
-        messagebox.showerror(
-            "Screen Monitoring Permission Required",
-            f"Screen monitoring cannot access window information.\n\n{instructions}"
-        )
-        # Stop the session since screen monitoring failed
-        if self.is_running and self.monitoring_mode == config.MODE_SCREEN_ONLY:
-            self._stop_session()
+        # Reset UI first
+        self._reset_to_idle_state()
+        self._update_status("idle", "Ready to Start")
+        
+        if sys.platform == "darwin":
+            result = messagebox.askyesno(
+                "Accessibility Permission Required",
+                "Screen monitoring requires Accessibility permission.\n\n"
+                "To enable:\n"
+                "1. Open System Settings\n"
+                "2. Go to Privacy & Security → Accessibility\n"
+                "3. Enable BrainDock in the list\n"
+                "4. Restart BrainDock\n\n"
+                "Would you like to open System Settings?"
+            )
+            
+            if result:
+                open_macos_accessibility_settings()
+        else:
+            messagebox.showerror(
+                "Screen Monitoring Permission Required",
+                f"Screen monitoring cannot access window information.\n\n{instructions}"
+            )
     
     def _handle_time_exhausted(self):
         """
@@ -4809,129 +4914,44 @@ By clicking 'I Understand', you acknowledge this data processing."""
     def _show_camera_permission_denied(self):
         """
         Show dialog when macOS camera permission was previously denied.
-
-        Offers to open System Settings directly so user can enable camera access.
+        Uses simple messagebox.askyesno() style like the PDF popup.
         """
-        # Create a custom dialog with "Open Settings" button
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Camera Permission Required")
-        dialog.transient(self.root)
-        dialog.grab_set()
-
-        # Center the dialog
-        dialog.geometry("420x280")
-        dialog.resizable(False, False)
-
-        # Use theme colors
-        colors = COLORS
-        dialog.configure(bg=colors["bg_primary"])
-
-        # Content frame
-        content = tk.Frame(dialog, bg=colors["bg_primary"])
-        content.pack(expand=True, fill=tk.BOTH, padx=30, pady=25)
-
-        # Title
-        title_label = tk.Label(
-            content,
-            text="Camera Access Denied",
-            font=("SF Pro Display", 18, "bold"),
-            fg=colors["text_primary"],
-            bg=colors["bg_primary"]
-        )
-        title_label.pack(pady=(0, 15))
-
-        # Message
-        message = (
+        result = messagebox.askyesno(
+            "Camera Permission Required",
+            "Camera access was denied.\n\n"
             "BrainDock needs camera access for focus tracking.\n\n"
-            "You previously denied camera permission.\n"
-            "Please enable it in System Settings:"
+            "To enable:\n"
+            "1. Open System Settings\n"
+            "2. Go to Privacy & Security → Camera\n"
+            "3. Enable BrainDock in the list\n"
+            "4. Restart BrainDock\n\n"
+            "Would you like to open System Settings?"
         )
-        msg_label = tk.Label(
-            content,
-            text=message,
-            font=("SF Pro Text", 13),
-            fg=colors["text_secondary"],
-            bg=colors["bg_primary"],
-            justify=tk.CENTER
-        )
-        msg_label.pack(pady=(0, 20))
-
-        # Button frame
-        btn_frame = tk.Frame(content, bg=colors["bg_primary"])
-        btn_frame.pack(pady=(0, 10))
-
-        def open_settings_and_close():
+        
+        if result:
             open_macos_camera_settings()
-            dialog.destroy()
-
-        def just_close():
-            dialog.destroy()
-
-        # Open Settings button - grey like other popup buttons
-        open_btn = tk.Button(
-            btn_frame,
-            text="Open System Settings",
-            font=("SF Pro Text", 13),
-            fg="#1C1C1E",
-            bg="#8E8E93",
-            activeforeground="#1C1C1E",
-            activebackground="#6B7280",
-            relief=tk.FLAT,
-            padx=20,
-            pady=10,
-            command=open_settings_and_close
-        )
-        open_btn.pack(side=tk.LEFT, padx=(0, 10))
-
-        # Cancel button - red
-        cancel_btn = tk.Button(
-            btn_frame,
-            text="Cancel",
-            font=("SF Pro Text", 13),
-            fg="#1C1C1E",
-            bg="#EF4444",
-            activeforeground="#1C1C1E",
-            activebackground="#DC2626",
-            relief=tk.FLAT,
-            padx=20,
-            pady=10,
-            command=just_close
-        )
-        cancel_btn.pack(side=tk.LEFT)
-
-        # Note about restart
-        note_label = tk.Label(
-            content,
-            text="Note: You may need to restart BrainDock after enabling.",
-            font=("SF Pro Text", 11),
-            fg=colors["text_secondary"],
-            bg=colors["bg_primary"]
-        )
-        note_label.pack(pady=(10, 0))
-
-        # Center dialog on parent
-        dialog.update_idletasks()
-        x = self.root.winfo_x() + (self.root.winfo_width() - dialog.winfo_width()) // 2
-        y = self.root.winfo_y() + (self.root.winfo_height() - dialog.winfo_height()) // 2
-        dialog.geometry(f"+{x}+{y}")
-
-        # Wait for dialog to close
-        dialog.wait_window()
 
     def _show_camera_error(self):
         """Show camera access error dialog with platform-specific instructions."""
+        # Fully reset UI to idle state (including pause button, stats panel, etc.)
+        self._reset_to_idle_state()
+        self._update_status("idle", "Ready to Start")
+        
         if sys.platform == "darwin":
-            # macOS-specific message with privacy settings instructions
-            message = (
+            # macOS-specific - use askyesno like PDF popup
+            result = messagebox.askyesno(
+                "Camera Permission Required",
                 "Failed to access webcam.\n\n"
                 "On macOS, you need to grant camera permission:\n\n"
                 "1. Open System Settings\n"
                 "2. Go to Privacy & Security → Camera\n"
                 "3. Enable BrainDock in the list\n"
                 "4. Restart BrainDock\n\n"
-                "If BrainDock is not in the list, try clicking\n"
-                "'Start Session' again to trigger the prompt."
+                "Would you like to open System Settings?"
             )
+            
+            if result:
+                open_macos_camera_settings()
         else:
             message = (
                 "Failed to access webcam.\n\n"
@@ -4940,11 +4960,7 @@ By clicking 'I Understand', you acknowledge this data processing."""
                 "• Camera permissions are granted\n"
                 "• No other app is using the camera"
             )
-        
-        # Fully reset UI to idle state (including pause button, stats panel, etc.)
-        self._reset_to_idle_state()
-        self._update_status("idle", "Ready to Start")
-        messagebox.showerror("Camera Error", message)
+            messagebox.showerror("Camera Error", message)
     
     def _show_detection_error(self, error: str):
         """

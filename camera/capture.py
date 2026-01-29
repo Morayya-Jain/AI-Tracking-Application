@@ -4,11 +4,183 @@ import cv2
 import logging
 import sys
 import time
+import threading
 from typing import Optional, Iterator, Tuple
 import numpy as np
 import config
 
 logger = logging.getLogger(__name__)
+
+
+# Camera permission status constants (mirrors AVAuthorizationStatus)
+CAMERA_PERMISSION_NOT_DETERMINED = 0
+CAMERA_PERMISSION_RESTRICTED = 1
+CAMERA_PERMISSION_DENIED = 2
+CAMERA_PERMISSION_AUTHORIZED = 3
+
+
+def get_macos_camera_permission_status() -> int:
+    """
+    Check the current camera authorization status on macOS.
+    
+    Returns:
+        One of CAMERA_PERMISSION_* constants:
+        - NOT_DETERMINED (0): User hasn't been asked yet
+        - RESTRICTED (1): Restricted by parental controls/MDM
+        - DENIED (2): User explicitly denied permission
+        - AUTHORIZED (3): User granted permission
+        
+    On non-macOS platforms, always returns AUTHORIZED.
+    """
+    if sys.platform != "darwin":
+        return CAMERA_PERMISSION_AUTHORIZED
+    
+    try:
+        import AVFoundation  # type: ignore[import-not-found]
+        # AVMediaTypeVideo = "vide"
+        status = AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_("vide")
+        logger.debug(f"macOS camera permission status: {status}")
+        return status
+    except ImportError:
+        logger.warning("AVFoundation not available - assuming camera permission granted")
+        return CAMERA_PERMISSION_AUTHORIZED
+    except Exception as e:
+        logger.error(f"Error checking camera permission: {e}")
+        return CAMERA_PERMISSION_AUTHORIZED
+
+
+def request_macos_camera_permission() -> bool:
+    """
+    Request camera permission on macOS, ensuring the dialog appears in front.
+    
+    This function:
+    1. Checks if permission is already determined
+    2. If not, temporarily hides the app so the permission dialog appears in front
+    3. Requests permission using AVFoundation
+    4. Waits for the user to respond
+    5. Returns the result
+    
+    Returns:
+        True if permission was granted, False otherwise.
+        On non-macOS platforms, always returns True.
+    """
+    if sys.platform != "darwin":
+        return True
+    
+    # Check current status
+    status = get_macos_camera_permission_status()
+    
+    if status == CAMERA_PERMISSION_AUTHORIZED:
+        logger.debug("Camera permission already granted")
+        return True
+    
+    if status == CAMERA_PERMISSION_DENIED:
+        logger.warning("Camera permission was denied - user must enable in System Settings")
+        return False
+    
+    if status == CAMERA_PERMISSION_RESTRICTED:
+        logger.warning("Camera access is restricted (parental controls or MDM)")
+        return False
+    
+    # Status is NOT_DETERMINED - request permission
+    logger.info("Requesting camera permission from user...")
+    print("[BrainDock] Requesting camera permission...")
+    
+    try:
+        import AVFoundation  # type: ignore[import-not-found]
+        
+        # Use an event to wait for the async callback
+        permission_granted = threading.Event()
+        permission_result = [False]  # Use list to allow modification in closure
+        
+        def permission_callback(granted: bool) -> None:
+            """Callback when user responds to permission dialog."""
+            permission_result[0] = granted
+            permission_granted.set()
+            logger.info(f"Camera permission {'granted' if granted else 'denied'} by user")
+            print(f"[BrainDock] Camera permission {'granted' if granted else 'denied'}")
+        
+        # Request permission - this triggers the macOS permission dialog
+        # Note: We don't deactivate the app because that must be called from main thread
+        # and this function may be called from a background thread (detection loop).
+        # The permission dialog will still appear, possibly behind the app window.
+        AVFoundation.AVCaptureDevice.requestAccessForMediaType_completionHandler_(
+            "vide",  # AVMediaTypeVideo
+            permission_callback
+        )
+        
+        # Wait for user to respond (up to 120 seconds)
+        # The dialog will stay open until user clicks Allow or Don't Allow
+        permission_granted.wait(timeout=120.0)
+        
+        return permission_result[0]
+        
+    except ImportError as e:
+        logger.warning(f"PyObjC frameworks not available: {e}")
+        # Fall back to letting OpenCV trigger the permission dialog
+        return True
+    except Exception as e:
+        logger.error(f"Error requesting camera permission: {e}")
+        # Fall back to letting OpenCV trigger the permission dialog
+        return True
+
+
+def ensure_macos_camera_permission() -> Tuple[bool, str, bool]:
+    """
+    Ensure camera permission is granted on macOS, showing dialog if needed.
+    
+    This is the main entry point for camera permission handling.
+    It checks the current status and either:
+    - Returns success if already authorized
+    - Requests permission (with dialog appearing in front) if not determined
+    - Returns failure with helpful message if denied/restricted
+    
+    Returns:
+        Tuple of (success: bool, message: str, is_first_denial: bool)
+        - success: True if camera can be used, False otherwise
+        - message: Empty string on success, or helpful error message on failure
+        - is_first_denial: True if this is the first time user denied (native dialog was shown)
+    """
+    if sys.platform != "darwin":
+        return True, "", False
+    
+    status = get_macos_camera_permission_status()
+    
+    if status == CAMERA_PERMISSION_AUTHORIZED:
+        return True, "", False
+    
+    if status == CAMERA_PERMISSION_DENIED:
+        # Already denied before - not a first-time denial
+        return False, (
+            "Camera access was denied.\n\n"
+            "To enable camera access:\n"
+            "1. Open System Settings\n"
+            "2. Go to Privacy & Security → Camera\n"
+            "3. Enable BrainDock\n"
+            "4. Restart BrainDock"
+        ), False
+    
+    if status == CAMERA_PERMISSION_RESTRICTED:
+        return False, (
+            "Camera access is restricted on this device.\n\n"
+            "This may be due to parental controls or device management policies."
+        ), False
+    
+    # NOT_DETERMINED - request permission (native macOS dialog will appear)
+    granted = request_macos_camera_permission()
+    
+    if granted:
+        return True, "", False
+    else:
+        # User just denied for the first time (native dialog was shown)
+        return False, (
+            "Camera access was denied.\n\n"
+            "To enable camera access:\n"
+            "1. Open System Settings\n"
+            "2. Go to Privacy & Security → Camera\n"
+            "3. Enable BrainDock\n"
+            "4. Restart BrainDock"
+        ), True  # is_first_denial = True
 
 
 class CameraCapture:
@@ -33,6 +205,8 @@ class CameraCapture:
         self.height = height or config.FRAME_HEIGHT
         self.cap: Optional[cv2.VideoCapture] = None
         self.is_opened = False
+        self.permission_error: Optional[str] = None  # Stores permission error message if any
+        self.is_first_denial: bool = False  # True if user just denied permission for the first time
     
     def __enter__(self) -> 'CameraCapture':
         """Context manager entry - open the camera."""
@@ -50,11 +224,26 @@ class CameraCapture:
         Automatically attempts wide mode (16:9) for more desk coverage.
         If camera doesn't support wide resolutions, falls back to standard 640x480.
         
+        On macOS, this method first ensures camera permission is granted,
+        showing the system permission dialog in front of the app if needed.
+        
         Returns:
             True if camera opened successfully, False otherwise.
         """
         try:
+            # On macOS, ensure camera permission before trying to open
+            # This shows the permission dialog in front of the app window
+            if sys.platform == "darwin":
+                permission_granted, error_message, is_first_denial = ensure_macos_camera_permission()
+                if not permission_granted:
+                    logger.error(f"Camera permission not granted: {error_message}")
+                    self.permission_error = error_message  # Store for GUI to display
+                    self.is_first_denial = is_first_denial  # Track if this was first-time denial
+                    return False
+            
+            print(f"[BrainDock] Opening camera at index {self.camera_index}...")
             self.cap = cv2.VideoCapture(self.camera_index)
+            print(f"[BrainDock] VideoCapture created, isOpened={self.cap.isOpened()}")
             
             if not self.cap.isOpened():
                 logger.error(f"Failed to open camera at index {self.camera_index}")
@@ -99,17 +288,22 @@ class CameraCapture:
             #
             # Important: On macOS, when the camera permission dialog first appears,
             # cap.read() may fail while the user is still responding to the dialog.
-            # We retry a few times with delays to give the user time to grant permission.
-            max_read_attempts = 10 if sys.platform == "darwin" else 3
+            # We retry many times with delays to give the user unlimited time to respond.
+            # 120 attempts * 0.5s = 60 seconds max wait time for permission dialog
+            max_read_attempts = 120 if sys.platform == "darwin" else 3
             read_delay = 0.5  # Wait between retries to give user time to respond to dialog
             
+            print(f"[BrainDock] Attempting to read frame (this triggers macOS permission dialog)...")
             for attempt in range(max_read_attempts):
                 ret, test_frame = self.cap.read()
                 if ret and test_frame is not None:
+                    print(f"[BrainDock] Frame read successful on attempt {attempt + 1}!")
                     break
                     
                 if attempt < max_read_attempts - 1:
-                    logger.debug(f"Camera read attempt {attempt + 1} failed, retrying in {read_delay}s...")
+                    if attempt % 10 == 0:  # Log every 5 seconds
+                        print(f"[BrainDock] Waiting for camera permission (attempt {attempt + 1}/{max_read_attempts})...")
+                        logger.debug(f"Waiting for camera access (attempt {attempt + 1}/{max_read_attempts})...")
                     time.sleep(read_delay)
             
             if not ret or test_frame is None:

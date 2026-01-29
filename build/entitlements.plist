@@ -21,5 +21,13 @@
     <!-- Network access (required for OpenAI/Gemini API calls) -->
     <key>com.apple.security.network.client</key>
     <true/>
+    
+    <!-- AppleEvents (required for screen monitoring via AppleScript) -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+    
+    <!-- Screen capture (required for optional AI screenshot analysis) -->
+    <key>com.apple.security.screen-capture</key>
+    <true/>
 </dict>
 </plist>

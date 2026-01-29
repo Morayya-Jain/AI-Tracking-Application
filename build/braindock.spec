@@ -128,6 +128,7 @@ if IS_MACOS:
     hiddenimports.extend([
         'AppKit',
         'Foundation',
+        'AVFoundation',  # For camera permission handling
         'objc',
         'PyObjCTools',
     ])
@@ -214,10 +215,18 @@ if IS_MACOS:
             'CFBundleIdentifier': 'com.braindock.app',
             'CFBundlePackageType': 'APPL',
             'CFBundleSignature': '????',
-            'LSMinimumSystemVersion': '10.13.0',
+            # Minimum macOS 10.15 (Catalina) required for Screen Recording permission
+            # and modern AVFoundation camera permission APIs
+            'LSMinimumSystemVersion': '10.15.0',
             'NSHighResolutionCapable': True,
+            # Camera access for focus detection
             'NSCameraUsageDescription': 'BrainDock needs camera access to monitor your focus and detect distractions.',
+            # Microphone (reserved for future features)
             'NSMicrophoneUsageDescription': 'BrainDock may use the microphone for future features.',
+            # Screen Recording for optional AI screenshot analysis
+            'NSScreenCaptureUsageDescription': 'BrainDock can optionally capture screenshots to detect distracting websites and apps (disabled by default).',
+            # AppleEvents for detecting active window title and browser URLs
+            'NSAppleEventsUsageDescription': 'BrainDock uses AppleScript to detect the active window and browser URL for distraction monitoring.',
             'LSApplicationCategoryType': 'public.app-category.productivity',
         },
     )

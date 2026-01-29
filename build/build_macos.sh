@@ -186,8 +186,9 @@ if [[ -d "$PROJECT_ROOT/dist/BrainDock.app" ]]; then
     echo ""
     
     # Code Signing Configuration
-    CODESIGN_IDENTITY="Developer ID Application: Morayya Jain (B62872437T)"
-    TEAM_ID="B62872437T"
+    # These can be overridden via environment variables for different developers
+    CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application: Morayya Jain (B62872437T)}"
+    TEAM_ID="${TEAM_ID:-B62872437T}"
     ENTITLEMENTS="$SCRIPT_DIR/entitlements.plist"
     
     # Check if we should sign and notarize
