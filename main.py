@@ -53,6 +53,7 @@ class BrainDock:
         self.session: Optional[Session] = None
         self.running = False
         self.should_stop = False
+        self.session_end_time: Optional[datetime] = None  # Captures precise end time
         
     def check_requirements(self) -> bool:
         """
@@ -180,6 +181,8 @@ class BrainDock:
             logger.error(f"Error during session: {e}")
             print(f"\n❌ An error occurred: {e}")
         finally:
+            # Capture precise end time immediately when session ends
+            self.session_end_time = datetime.now()
             self.running = False
             stop_event.set()
     
@@ -211,8 +214,9 @@ class BrainDock:
         print("📊 Finalizing session...")
         print("=" * 60 + "\n")
         
-        # End the session
-        self.session.end()
+        # End the session with precise end time captured when session actually ended
+        # This ensures accurate duration calculation even if report generation takes time
+        self.session.end(end_time=self.session_end_time)
         
         # Compute statistics
         print("⚙️  Computing analytics...")

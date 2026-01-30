@@ -226,18 +226,36 @@ class InstanceLock:
                 return True
             
             # Lock failed - check if it's a stale lock from a dead process
-            if self._check_and_clean_stale_lock():
-                # Stale lock cleaned up, try again
-                if self._try_acquire_lock(write_pid=True):
-                    self._acquired = True
-                    logger.info("Instance lock acquired after cleaning stale lock")
-                    return True
+            try:
+                if self._check_and_clean_stale_lock():
+                    # Stale lock cleaned up, try again
+                    if self._try_acquire_lock(write_pid=True):
+                        self._acquired = True
+                        logger.info("Instance lock acquired after cleaning stale lock")
+                        return True
+            except Exception as cleanup_error:
+                # Log cleanup error but don't fail - another instance may be running
+                logger.warning(f"Error during stale lock cleanup: {cleanup_error}")
+                # Clean up any partially-opened lock handle
+                if self._lock_handle is not None:
+                    try:
+                        self._lock_handle.close()
+                    except Exception:
+                        pass
+                    self._lock_handle = None
             
             # Another instance is genuinely running
             return False
             
         except Exception as e:
             logger.warning(f"Error acquiring instance lock: {e}")
+            # Clean up any partially-opened lock handle on error
+            if self._lock_handle is not None:
+                try:
+                    self._lock_handle.close()
+                except Exception:
+                    pass
+                self._lock_handle = None
             # On unexpected error, allow the app to run (fail-open for robustness)
             # This ensures the app doesn't break due to permission issues, etc.
             return True

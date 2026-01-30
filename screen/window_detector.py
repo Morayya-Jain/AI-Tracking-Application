@@ -543,12 +543,12 @@ def _capture_screenshot() -> Optional[str]:
     Capture a screenshot and return as base64-encoded JPEG.
     
     Uses a lower resolution for cost efficiency.
+    Imports PIL Image internally as it may not be available on all systems.
     
     Returns:
         Base64-encoded image data, or None if capture failed
     """
     try:
-        import sys
         import base64
         from io import BytesIO
         

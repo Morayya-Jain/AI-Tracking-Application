@@ -2,18 +2,19 @@
 
 import cv2
 import numpy as np
-import base64
-import json
 import logging
-import time
 from typing import Dict, Optional, Any
-import threading
 
 import google.generativeai as genai
 from PIL import Image
-import io
 
 import config
+from camera.base_detector import (
+    get_safe_default_result,
+    parse_detection_response,
+    DetectionCache,
+    retry_with_backoff
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ class GeminiVisionDetector:
         # Configure the Gemini API
         genai.configure(api_key=self.api_key)
         
-        # Initialize the model
+        # Initialize the model with request timeout
         self.model = genai.GenerativeModel(
             model_name=self.vision_model,
             generation_config=genai.GenerationConfig(
@@ -65,11 +66,11 @@ class GeminiVisionDetector:
             )
         )
         
-        # Cache for reducing API calls (thread-safe)
-        self._cache_lock = threading.Lock()
-        self.last_detection_time = 0
-        self.last_detection_result = None
-        self.detection_cache_duration = 3.0  # Cache for 3 seconds (matches detection interval)
+        # Request timeout in seconds (prevents indefinite hangs on network issues)
+        self.request_timeout = 30.0
+        
+        # Thread-safe cache for reducing API calls
+        self._cache = DetectionCache(cache_duration=3.0)  # Cache for 3 seconds
         
         # System prompt (same as OpenAI version for consistency)
         self.system_prompt = self._build_system_prompt()
@@ -180,11 +181,10 @@ RULES:
             }
         """
         # Check cache (thread-safe)
-        current_time = time.time()
-        with self._cache_lock:
-            if use_cache and self.last_detection_result is not None and \
-               (current_time - self.last_detection_time) < self.detection_cache_duration:
-                return self.last_detection_result
+        if use_cache:
+            is_valid, cached_result = self._cache.get()
+            if is_valid and cached_result is not None:
+                return cached_result
         
         try:
             # Convert frame to PIL Image
@@ -193,8 +193,36 @@ RULES:
             # Create the prompt with system instructions and user request
             prompt = f"{self.system_prompt}\n\nAnalyze this frame:"
             
-            # Call Gemini Vision API
-            response = self.model.generate_content([prompt, pil_image])
+            # Define the API call as a function for retry logic
+            def make_api_call():
+                return self.model.generate_content(
+                    [prompt, pil_image],
+                    request_options={"timeout": self.request_timeout}
+                )
+            
+            # Transient errors that warrant retry (network issues, rate limits, server errors)
+            # Note: google.api_core.exceptions has ResourceExhausted, ServiceUnavailable, etc.
+            try:
+                from google.api_core import exceptions as google_exceptions
+                retryable = (
+                    ConnectionError,
+                    TimeoutError,
+                    google_exceptions.ResourceExhausted,  # Rate limit
+                    google_exceptions.ServiceUnavailable,  # Server issue
+                    google_exceptions.DeadlineExceeded,  # Timeout
+                )
+            except ImportError:
+                # Fall back to basic exceptions if google.api_core not available
+                retryable = (ConnectionError, TimeoutError)
+            
+            # Call Gemini Vision API with retry logic for transient errors
+            response = retry_with_backoff(
+                make_api_call,
+                max_retries=2,  # 2 retries = 3 total attempts
+                initial_delay=1.0,
+                max_delay=5.0,
+                retryable_exceptions=retryable
+            )
             
             # Extract response content
             content = response.text
@@ -206,41 +234,11 @@ RULES:
                 logger.error("Empty response from Gemini API")
                 raise ValueError("Empty response from Gemini Vision API")
             
-            # Try to extract JSON if there's extra text
-            content = content.strip()
-            
-            # Sometimes the response has backticks or extra text
-            if '```json' in content:
-                # Extract JSON from markdown code block
-                content = content.split('```json')[1].split('```')[0].strip()
-            elif '```' in content:
-                content = content.split('```')[1].split('```')[0].strip()
-            elif '{' in content and '}' in content:
-                # Extract just the JSON part
-                start = content.index('{')
-                end = content.rindex('}') + 1
-                content = content[start:end]
-            
-            # Parse JSON response
-            try:
-                result = json.loads(content)
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse JSON. Content: {content[:500]}")
-                raise
-            
-            # Validate and normalize result
-            detection_result = {
-                "person_present": result.get("person_present", False),
-                "at_desk": result.get("at_desk", True),  # Default True for backward compat
-                "gadget_visible": result.get("gadget_visible", False),
-                "gadget_confidence": float(result.get("gadget_confidence", 0.0)),
-                "distraction_type": result.get("distraction_type", "none")
-            }
+            # Parse and validate response using shared utility
+            detection_result = parse_detection_response(content)
             
             # Cache result (thread-safe)
-            with self._cache_lock:
-                self.last_detection_result = detection_result
-                self.last_detection_time = current_time
+            self._cache.set(detection_result)
             
             # Log detection
             if detection_result["gadget_visible"]:
@@ -252,16 +250,12 @@ RULES:
             
             return detection_result
             
+        except TimeoutError as e:
+            logger.warning(f"Gemini Vision API timeout: {e}")
+            return get_safe_default_result()
         except Exception as e:
             logger.error(f"Gemini Vision API error: {e}")
-            # Return safe default
-            return {
-                "person_present": True,  # Assume present on error
-                "at_desk": True,  # Assume at desk on error
-                "gadget_visible": False,
-                "gadget_confidence": 0.0,
-                "distraction_type": "none"
-            }
+            return get_safe_default_result()
     
     def detect_presence(self, frame: np.ndarray) -> bool:
         """

@@ -14,7 +14,7 @@ import subprocess
 import sys
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 from datetime import datetime
 
 # PIL for logo image support
@@ -310,6 +310,35 @@ def get_colors():
 
 # Active color palette (for backward compatibility)
 COLORS = get_colors()
+
+# --- UI Dimension Constants ---
+# Base dimensions for scalable UI elements (at scale 1.0)
+# These are multiplied by current_scale during rendering
+
+# Button dimensions (start/stop, pause)
+UI_BUTTON_WIDTH = 240
+UI_BUTTON_HEIGHT = 64
+UI_BUTTON_MIN_WIDTH = 160
+UI_BUTTON_MIN_HEIGHT = 46
+
+# Camera card (status display)
+UI_CAMERA_CARD_WIDTH = 400
+UI_CAMERA_CARD_HEIGHT = 240
+UI_CAMERA_CARD_MIN_WIDTH = 280
+UI_CAMERA_CARD_MIN_HEIGHT = 168
+
+# Stat card dimensions
+UI_STAT_CARD_WIDTH = 280
+UI_STAT_CARD_HEIGHT = 120
+UI_STAT_CARD_MIN_WIDTH = 200
+UI_STAT_CARD_MIN_HEIGHT = 85
+
+# Layout padding values (base values, scaled at runtime)
+UI_HEADER_PADDING = 20
+UI_MAIN_PADDING = 40
+UI_FOOTER_PADDING = 50
+UI_TIMER_BOTTOM_PAD = 40
+UI_STAT_CARD_GAP = 5
 
 # Assets directory for logos (bundled with app)
 ASSETS_DIR = config.BASE_DIR / "assets"
@@ -1223,6 +1252,12 @@ class BrainDockGUI:
         # UI update lock
         self.ui_lock = threading.Lock()
         
+        # Shared detection state for priority resolution (used in "both" mode)
+        # These track the latest detection state from each detector
+        self._camera_state: Optional[Dict] = None  # Latest camera detection result
+        self._screen_state: Optional[Dict] = None  # Latest screen detection result
+        self._state_lock = threading.Lock()  # Thread-safe access to detection states
+        
         # Create UI elements
         self._create_fonts()
         self._create_widgets()
@@ -1367,8 +1402,8 @@ class BrainDockGUI:
             self._create_fonts(new_scale)
             
             # Scale buttons proportionally (but keep minimum size)
-            new_btn_width = max(160, int(240 * new_scale))
-            new_btn_height = max(46, int(64 * new_scale))
+            new_btn_width = max(UI_BUTTON_MIN_WIDTH, int(UI_BUTTON_WIDTH * new_scale))
+            new_btn_height = max(UI_BUTTON_MIN_HEIGHT, int(UI_BUTTON_HEIGHT * new_scale))
             
             if hasattr(self, 'start_stop_btn'):
                 self.start_stop_btn.configure(width=new_btn_width, height=new_btn_height)
@@ -1378,8 +1413,8 @@ class BrainDockGUI:
             
             # Scale camera card dimensions
             if hasattr(self, 'camera_card'):
-                new_camera_width = max(280, int(400 * new_scale))
-                new_camera_height = max(168, int(240 * new_scale))
+                new_camera_width = max(UI_CAMERA_CARD_MIN_WIDTH, int(UI_CAMERA_CARD_WIDTH * new_scale))
+                new_camera_height = max(UI_CAMERA_CARD_MIN_HEIGHT, int(UI_CAMERA_CARD_HEIGHT * new_scale))
                 self.camera_card.configure(width=new_camera_width, height=new_camera_height)
                 self.camera_card.draw()
             
@@ -1387,8 +1422,8 @@ class BrainDockGUI:
             if hasattr(self, 'stat_cards'):
                 for card_type, card_data in self.stat_cards.items():
                     if 'card' in card_data:
-                        new_card_width = max(200, int(280 * new_scale))
-                        new_card_height = max(85, int(120 * new_scale))
+                        new_card_width = max(UI_STAT_CARD_MIN_WIDTH, int(UI_STAT_CARD_WIDTH * new_scale))
+                        new_card_height = max(UI_STAT_CARD_MIN_HEIGHT, int(UI_STAT_CARD_HEIGHT * new_scale))
                         card_data['card'].configure(width=new_card_width, height=new_card_height)
                         # Don't call draw() here - _apply_scaled_fonts() will handle drawing and text creation
             
@@ -1516,8 +1551,9 @@ class BrainDockGUI:
             tk.Label(header_frame, text="BrainDock", font=self.font_title, bg=COLORS["bg_primary"], fg=COLORS["text_primary"]).pack(side=tk.LEFT)
 
         # Usage Badge (Right)
-        # We'll create it here but update it later
-        self.time_badge = Badge(header_frame, text="Loading...", bg_color=COLORS["bg_tertiary"], fg_color=COLORS["text_secondary"], font=self.font_badge, clickable=True)
+        # Initialize with default time limit, will be updated shortly after
+        initial_time = self.usage_limiter.format_time(self.usage_limiter.get_remaining_seconds())
+        self.time_badge = Badge(header_frame, text=initial_time, bg_color=COLORS["bg_tertiary"], fg_color=COLORS["text_secondary"], font=self.font_badge, clickable=True)
         self.time_badge.pack(side=tk.RIGHT, anchor="ne")
         self.time_badge.bind_click(self._show_usage_details)
 
@@ -1561,8 +1597,8 @@ class BrainDockGUI:
         
         # Camera card now acts as the status display
         # Scale dimensions based on current scale
-        camera_width = max(280, int(400 * self.current_scale))
-        camera_height = max(168, int(240 * self.current_scale))
+        camera_width = max(UI_CAMERA_CARD_MIN_WIDTH, int(UI_CAMERA_CARD_WIDTH * self.current_scale))
+        camera_height = max(UI_CAMERA_CARD_MIN_HEIGHT, int(UI_CAMERA_CARD_HEIGHT * self.current_scale))
         self.camera_card = Card(
             camera_container, 
             width=camera_width, 
@@ -1591,8 +1627,8 @@ class BrainDockGUI:
         self.timer_sub_label.pack(pady=(12, 40))
 
         # Start Button - scale dimensions based on current scale
-        btn_width = max(160, int(240 * self.current_scale))
-        btn_height = max(46, int(64 * self.current_scale))
+        btn_width = max(UI_BUTTON_MIN_WIDTH, int(UI_BUTTON_WIDTH * self.current_scale))
+        btn_height = max(UI_BUTTON_MIN_HEIGHT, int(UI_BUTTON_HEIGHT * self.current_scale))
         self.start_stop_btn = RoundedButton(
             timer_frame,
             text="Start Session",
@@ -1662,8 +1698,8 @@ class BrainDockGUI:
         wrapper.pack(pady=self.scaling_manager.scale_padding(5))
         
         # Compact card dimensions - scale based on current scale
-        card_width = max(200, int(280 * self.current_scale))
-        card_height = max(85, int(120 * self.current_scale))
+        card_width = max(UI_STAT_CARD_MIN_WIDTH, int(UI_STAT_CARD_WIDTH * self.current_scale))
+        card_height = max(UI_STAT_CARD_MIN_HEIGHT, int(UI_STAT_CARD_HEIGHT * self.current_scale))
         # Card body has asymmetric padding (2px left, 6px right), so visual center is offset by -2
         center_x = (card_width // 2) - 2
         
@@ -1696,15 +1732,6 @@ class BrainDockGUI:
         self.stat_cards[card_type]["main"] = card.create_text(
             center_x, int(72 * self.current_scale), text=main_val, anchor="center", font=self.font_stat, fill=COLORS["text_primary"]
         )
-        
-        # Sub-stats (Only for Focus and Distractions)
-        if card_type != "rate":
-            # Sub-stat (Centered below main)
-            # card.create_text(center_x - 10, 115, text=sub_label, anchor="e", font=self.font_small, fill=COLORS["text_secondary"])
-            # self.stat_cards[card_type]["sub"] = card.create_text(
-            #    center_x + 10, 115, text=sub_val, anchor="w", font=self.font_small, fill=COLORS["text_primary"]
-            # )
-            pass
 
     def _init_daily_stat_cards(self):
         """
@@ -4251,6 +4278,11 @@ class BrainDockGUI:
         self.gadget_detection_count = 0
         self.screen_distraction_count = 0
         
+        # Reset shared detection state for new session
+        with self._state_lock:
+            self._camera_state = None
+            self._screen_state = None
+        
         # Reset stat cards to zero values (clear any stale data from previous session)
         self._reset_stat_cards()
         
@@ -4456,16 +4488,33 @@ class BrainDockGUI:
                             self.session_started = True
                             logger.info("First detection complete - session timer started")
                         
-                        # Determine event type
-                        event_type = get_event_type(detection_state)
+                        # Store camera detection state for priority resolution
+                        with self._state_lock:
+                            self._camera_state = detection_state
                         
-                        # Check for state change to distraction (increment counters)
-                        if self.session and self.session.current_state != event_type:
-                            if event_type == config.EVENT_GADGET_SUSPECTED:
+                        # Get raw camera event type (for gadget counter tracking)
+                        raw_camera_event = get_event_type(detection_state)
+                        
+                        # Determine final event type based on monitoring mode
+                        if self.monitoring_mode == config.MODE_BOTH:
+                            # In "both" mode, use priority resolution
+                            event_type = self._resolve_priority_status()
+                        else:
+                            # In camera-only mode, use raw camera event
+                            event_type = raw_camera_event
+                        
+                        # Check for state change to gadget distraction (increment counter)
+                        # Use raw camera event to track actual gadget detections
+                        if self.session and raw_camera_event == config.EVENT_GADGET_SUSPECTED:
+                            if self.session.current_state != config.EVENT_GADGET_SUSPECTED:
                                 self.gadget_detection_count += 1
                         
-                        # Check if user is unfocused (away or on gadget)
-                        is_unfocused = event_type in (config.EVENT_AWAY, config.EVENT_GADGET_SUSPECTED)
+                        # Check if user is unfocused (based on priority-resolved event)
+                        is_unfocused = event_type in (
+                            config.EVENT_AWAY, 
+                            config.EVENT_GADGET_SUSPECTED,
+                            config.EVENT_SCREEN_DISTRACTION
+                        )
                         
                         if is_unfocused:
                             # Start tracking if not already
@@ -4490,7 +4539,7 @@ class BrainDockGUI:
                             self.unfocused_start_time = None
                             self.alerts_played = 0
                         
-                        # Log event
+                        # Log event (priority-resolved in "both" mode)
                         if self.session:
                             self.session.log_event(event_type)
                         
@@ -4567,44 +4616,66 @@ class BrainDockGUI:
                     if self.is_paused:
                         continue
                     
-                    # Check for distraction
-                    if screen_state.get("is_distracted", False):
-                        distraction_source = screen_state.get("distraction_source", "Unknown")
+                    # Store screen state for priority resolution
+                    with self._state_lock:
+                        self._screen_state = screen_state
+                    
+                    # Track screen distraction count (regardless of priority resolution)
+                    is_screen_distracted = screen_state.get("is_distracted", False)
+                    if is_screen_distracted and self.session and self.session_started:
+                        if self.session.current_state != config.EVENT_SCREEN_DISTRACTION:
+                            self.screen_distraction_count += 1
+                    
+                    # Determine final event type based on monitoring mode
+                    if self.monitoring_mode == config.MODE_BOTH:
+                        # In "both" mode, use priority resolution
+                        # The camera loop handles logging, so we only update UI here
+                        # when screen state changes and could affect the priority
+                        event_type = self._resolve_priority_status()
                         
-                        # Log event
-                        if self.session and self.session_started:
-                            # Check for state change to distraction (increment counters)
-                            if self.session.current_state != config.EVENT_SCREEN_DISTRACTION:
-                                self.screen_distraction_count += 1
-                                
-                            self.session.log_event(config.EVENT_SCREEN_DISTRACTION)
+                        # Update UI based on priority-resolved event
+                        if event_type == config.EVENT_SCREEN_DISTRACTION:
+                            distraction_source = screen_state.get("distraction_source", "Unknown")
+                            distraction_label = self._get_distraction_label(distraction_source)
+                            self.root.after(0, lambda lbl=distraction_label: self._update_status(
+                                "screen", lbl
+                            ))
+                        # Note: In "both" mode, camera loop handles logging and other UI updates
+                        # Screen loop only needs to update UI when screen distraction has priority
                         
-                        # Determine if it's a website or app distraction
-                        # Website: contains a dot and looks like a domain
-                        distraction_label = self._get_distraction_label(distraction_source)
-                        
-                        # Update UI (thread-safe)
-                        self.root.after(0, lambda lbl=distraction_label: self._update_status(
-                            "screen", lbl
-                        ))
-                        
-                        # Track for alerts (same as camera distraction)
-                        if self.unfocused_start_time is None:
-                            self.unfocused_start_time = current_time
-                            self.alerts_played = 0
-                            logger.debug("Started tracking screen distraction time")
-                        
-                        # Check for escalating alerts
-                        unfocused_duration = current_time - self.unfocused_start_time
-                        alert_times = config.UNFOCUSED_ALERT_TIMES
-                        
-                        if (self.alerts_played < len(alert_times) and
-                            unfocused_duration >= alert_times[self.alerts_played]):
-                            self._play_unfocused_alert()
-                            self.alerts_played += 1
-                    else:
-                        # Not distracted - only update if screen-only mode or if camera didn't detect distraction
-                        if self.monitoring_mode == config.MODE_SCREEN_ONLY:
+                    elif self.monitoring_mode == config.MODE_SCREEN_ONLY:
+                        # In screen-only mode, handle logging and UI directly
+                        if is_screen_distracted:
+                            distraction_source = screen_state.get("distraction_source", "Unknown")
+                            
+                            # Log event
+                            if self.session and self.session_started:
+                                self.session.log_event(config.EVENT_SCREEN_DISTRACTION)
+                            
+                            # Determine if it's a website or app distraction
+                            distraction_label = self._get_distraction_label(distraction_source)
+                            
+                            # Update UI (thread-safe)
+                            self.root.after(0, lambda lbl=distraction_label: self._update_status(
+                                "screen", lbl
+                            ))
+                            
+                            # Track for alerts
+                            if self.unfocused_start_time is None:
+                                self.unfocused_start_time = current_time
+                                self.alerts_played = 0
+                                logger.debug("Started tracking screen distraction time")
+                            
+                            # Check for escalating alerts
+                            unfocused_duration = current_time - self.unfocused_start_time
+                            alert_times = config.UNFOCUSED_ALERT_TIMES
+                            
+                            if (self.alerts_played < len(alert_times) and
+                                unfocused_duration >= alert_times[self.alerts_played]):
+                                self._play_unfocused_alert()
+                                self.alerts_played += 1
+                        else:
+                            # Not distracted in screen-only mode
                             if self.session and self.session_started:
                                 self.session.log_event(config.EVENT_PRESENT)
                             self.root.after(0, lambda: self._update_status("focused", "Focused"))
@@ -4763,6 +4834,44 @@ class BrainDockGUI:
         except Exception as e:
             logger.error(f"Report generation failed during lockout: {e}")
             self._reset_button_state()
+    
+    def _resolve_priority_status(self) -> str:
+        """
+        Resolve the current status based on priority rules.
+        
+        Priority order (highest to lowest):
+        1. Paused - User manually paused session
+        2. Away - Person not present or not at working distance
+        3. Screen distraction - On a distracting app/website
+        4. Gadget - Actively using phone/tablet/controller
+        5. Focused - Present at desk, no distractions (default)
+        
+        Returns:
+            Event type constant representing the prioritized status
+        """
+        with self._state_lock:
+            # Priority 1: Paused (absolute highest priority)
+            if self.is_paused:
+                return config.EVENT_PAUSED
+            
+            # Priority 2: Away (from camera detection)
+            if self._camera_state:
+                camera_event = get_event_type(self._camera_state)
+                if camera_event == config.EVENT_AWAY:
+                    return config.EVENT_AWAY
+            
+            # Priority 3: Screen distraction
+            if self._screen_state and self._screen_state.get("is_distracted"):
+                return config.EVENT_SCREEN_DISTRACTION
+            
+            # Priority 4: Gadget (from camera detection)
+            if self._camera_state:
+                camera_event = get_event_type(self._camera_state)
+                if camera_event == config.EVENT_GADGET_SUSPECTED:
+                    return config.EVENT_GADGET_SUSPECTED
+            
+            # Priority 5: Focused (default - person present, no distractions)
+            return config.EVENT_PRESENT
     
     def _update_detection_status(self, event_type: str):
         """

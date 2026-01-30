@@ -293,17 +293,42 @@ class CameraCapture:
             max_read_attempts = 120 if sys.platform == "darwin" else 3
             read_delay = 0.5  # Wait between retries to give user time to respond to dialog
             
-            print(f"[BrainDock] Attempting to read frame (this triggers macOS permission dialog)...")
+            if sys.platform == "darwin":
+                print(f"[BrainDock] Requesting camera access...")
+                print(f"[BrainDock] If a permission dialog appears, please click 'OK' or 'Allow'")
+            else:
+                print(f"[BrainDock] Attempting to read frame...")
+            
+            permission_dialog_shown = False
             for attempt in range(max_read_attempts):
                 ret, test_frame = self.cap.read()
                 if ret and test_frame is not None:
-                    print(f"[BrainDock] Frame read successful on attempt {attempt + 1}!")
+                    if sys.platform == "darwin" and attempt > 0:
+                        print(f"[BrainDock] Camera access granted! Starting session...")
+                    else:
+                        print(f"[BrainDock] Camera ready!")
                     break
                     
                 if attempt < max_read_attempts - 1:
-                    if attempt % 10 == 0:  # Log every 5 seconds
-                        print(f"[BrainDock] Waiting for camera permission (attempt {attempt + 1}/{max_read_attempts})...")
-                        logger.debug(f"Waiting for camera access (attempt {attempt + 1}/{max_read_attempts})...")
+                    # Provide helpful feedback while waiting
+                    if sys.platform == "darwin":
+                        if attempt == 0:
+                            # First failure - permission dialog likely showing
+                            permission_dialog_shown = True
+                            logger.info("Waiting for user to respond to camera permission dialog...")
+                        elif attempt == 20:  # ~10 seconds
+                            print("[BrainDock] Still waiting for camera permission...")
+                            print("[BrainDock] Please click 'Allow' in the system dialog")
+                        elif attempt == 60:  # ~30 seconds
+                            print("[BrainDock] Camera permission dialog may be behind other windows")
+                            print("[BrainDock] Check your taskbar/dock for the permission prompt")
+                        elif attempt % 20 == 0 and attempt > 60:
+                            elapsed_secs = int(attempt * read_delay)
+                            print(f"[BrainDock] Waiting for camera access ({elapsed_secs}s elapsed)...")
+                    else:
+                        if attempt % 10 == 0:
+                            logger.debug(f"Waiting for camera access (attempt {attempt + 1}/{max_read_attempts})...")
+                    
                     time.sleep(read_delay)
             
             if not ret or test_frame is None:

@@ -17,7 +17,7 @@
 1. **Math Must Add Up**: `present + away + gadget + screen_distraction + paused = total` in `analytics.py`
 2. **AI-Only Detection** (Camera): OpenAI Vision API only (~$0.06-0.12/min)
 3. **Screen Detection**: Local pattern matching first, AI fallback optional
-4. **Time Format**: Use `_format_time()` → "1m 30s" not "1.5 minutes"
+4. **Time Format**: Use `format_duration()` from `tracking/analytics.py` → "1m 30s" not "1.5 minutes"
 
 ## Event Types
 

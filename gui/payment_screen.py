@@ -552,7 +552,7 @@ class PaymentScreen:
         # Price label - unified styling, no hyphen
         tk.Label(
             self.inner_frame, 
-            text=f"{price_text} · One-time payment for unlimited use", 
+            text=f"{price_text} · One-Time Payment", 
             font=self.font_body, 
             bg=COLORS["surface"], 
             fg=COLORS["text_secondary"]
@@ -639,6 +639,7 @@ class PaymentScreen:
         self.verify_button.pack(side="right", anchor="n")
         
         self.session_entry = StyledEntry(verify_row, placeholder="cs_live_...")
+        self.session_entry.canvas.configure(height=verify_btn_height)
         self.session_entry.pack(side="left", fill="x", expand=True, padx=(0, self._scale_padding(10)), anchor="n")
         self.session_entry.bind_return(self._on_verify_payment)
         self.session_entry.entry.bind("<Key>", self._clear_global_status, add="+")
@@ -830,34 +831,40 @@ class PaymentScreen:
             return
         
         # Check if payment is ready and waiting for activation (thread-safe)
+        # We atomically check ready flag AND payment_detected to prevent races
         with self._polling_lock:
+            # Double-check: skip if already detected/activated by another path
+            if self._payment_detected:
+                return
+            
             if self._payment_ready and self._payment_session_id and self._payment_info:
                 logger.info("User returned to app - activating license")
-                # Reset the ready flag to prevent multiple activations
+                # Set payment_detected HERE while holding lock to prevent races
+                # This ensures only one code path can proceed to activation
+                self._payment_detected = True
                 self._payment_ready = False
                 session_id = self._payment_session_id
                 payment_info = self._payment_info
+                # Clear stored payment info since we're activating
+                self._payment_session_id = None
+                self._payment_info = None
             else:
                 return  # No payment ready
         
         # Trigger activation (outside lock to avoid holding it too long)
-        self._on_payment_detected(session_id, payment_info)
+        self._complete_activation(session_id, payment_info)
     
-    def _on_payment_detected(self, session_id: str, info: dict):
+    def _complete_activation(self, session_id: str, info: dict):
         """
-        Handle successful payment detection (from polling or redirect).
+        Complete the license activation process.
         
-        Activates the license and transitions to the main app.
+        This method assumes the caller has already set _payment_detected = True
+        (either via lock or atomically). It handles cleanup and license activation.
         
         Args:
             session_id: The session ID that was paid.
             info: Payment information from Stripe.
         """
-        with self._polling_lock:
-            if self._payment_detected:
-                return  # Prevent duplicate activations
-            self._payment_detected = True
-        
         # Stop polling and local server
         self._stop_payment_polling()
         if self._local_server:

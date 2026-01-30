@@ -85,7 +85,7 @@ Set `VISION_PROVIDER` in `.env` or config: `"openai"` or `"gemini"` (default for
 - Docstrings for all functions
 - Use `pathlib.Path` for file operations
 - Use `logging` module for internal logs, `print()` only for user-facing output
-- Time formatting: Use `_format_time()` → "1m 30s" not "1.5 minutes"
+- Time formatting: Use `format_duration()` from `tracking/analytics.py` → "1m 30s" not "1.5 minutes"
 - Never use `cursor="hand2"` in tkinter UI - use native device cursor
 
 ## Critical Rules

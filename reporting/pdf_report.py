@@ -28,6 +28,7 @@ from reportlab.graphics.shapes import Drawing, Wedge, Polygon, Circle
 import math
 
 import config
+from tracking.analytics import format_duration
 
 logger = logging.getLogger(__name__)
 
@@ -116,8 +117,7 @@ def _format_time_seconds(seconds: float) -> str:
     """
     Format time in seconds to human-readable display.
     
-    Truncates (floors) to integer seconds at the end for consistent display.
-    This is the ONLY place where float->int conversion should happen for time.
+    Delegates to the canonical format_duration() function from analytics.
     
     Args:
         seconds: Time in seconds as float
@@ -125,45 +125,7 @@ def _format_time_seconds(seconds: float) -> str:
     Returns:
         Formatted string like "1m 30s" or "45s" or "2h 15m"
     """
-    # Truncate to int at display time only (floor, not round)
-    total_seconds = int(seconds)
-    
-    # Less than 1 minute - show seconds only
-    if total_seconds < 60:
-        return f"{total_seconds}s"
-    
-    hours = total_seconds // 3600
-    remaining_seconds = total_seconds % 3600
-    mins = remaining_seconds // 60
-    secs = remaining_seconds % 60
-    
-    if hours > 0:
-        if secs > 0:
-            return f"{hours}h {mins}m {secs}s"
-        elif mins > 0:
-            return f"{hours}h {mins}m"
-        else:
-            return f"{hours}h"
-    else:
-        if secs > 0:
-            return f"{mins}m {secs}s"
-        else:
-            return f"{mins}m"
-
-
-def _format_time(minutes: float) -> str:
-    """
-    Format time in minutes to human-readable display.
-    
-    Legacy wrapper that converts minutes to seconds and calls _format_time_seconds.
-    
-    Args:
-        minutes: Time in minutes as float
-        
-    Returns:
-        Formatted string like "1m 30s" or "45s" or "2h 15m"
-    """
-    return _format_time_seconds(minutes * 60.0)
+    return format_duration(seconds)
 
 
 # Focus category definitions with colors matching the gauge
@@ -1035,28 +997,52 @@ def generate_report(
     # Statistics section
     story.append(Paragraph("Summary Statistics", heading_style))
     
-    # Get raw values in seconds (floats for precision)
-    # Use new fields if available, fall back to minutes * 60 for backward compat
-    if 'present_seconds' in stats:
-        present_secs = stats['present_seconds']
-        away_secs = stats['away_seconds']
-        gadget_secs = stats['gadget_seconds']
-        screen_distraction_secs = stats.get('screen_distraction_seconds', 0)
-        paused_secs = stats['paused_seconds']
-        active_secs = stats['active_seconds']  # = present + away + gadget + screen_distraction
-    else:
-        # Legacy fallback
-        present_secs = stats.get('present_minutes', 0) * 60.0
-        away_secs = stats.get('away_minutes', 0) * 60.0
-        gadget_secs = stats.get('gadget_minutes', 0) * 60.0
-        screen_distraction_secs = stats.get('screen_distraction_minutes', 0) * 60.0
-        paused_secs = stats.get('paused_minutes', 0) * 60.0
-        active_secs = present_secs + away_secs + gadget_secs + screen_distraction_secs
+    # Get consolidated events for display-consistent calculations
+    # Each log entry's duration will be truncated to int when displayed
+    # So category totals and active time must match the sum of displayed log entries
+    events = stats.get('events', [])
     
-    # Calculate focus percentage: present / active_time
+    # Calculate display-consistent category totals by summing truncated event durations
+    # This ensures: displayed category total = sum of displayed log entries for that category
+    present_secs_display = 0
+    away_secs_display = 0
+    gadget_secs_display = 0
+    screen_distraction_secs_display = 0
+    paused_secs_display = 0
+    
+    for event in events:
+        # Truncate each event duration to int (matches how it's displayed in logs)
+        duration_int = int(event.get('duration_seconds', 0))
+        event_type = event.get('type', '')
+        
+        if event_type == 'present':
+            present_secs_display += duration_int
+        elif event_type == 'away':
+            away_secs_display += duration_int
+        elif event_type == 'gadget_suspected':
+            gadget_secs_display += duration_int
+        elif event_type == 'screen_distraction':
+            screen_distraction_secs_display += duration_int
+        elif event_type == 'paused':
+            paused_secs_display += duration_int
+    
+    # Use display values for the summary table
+    present_secs = present_secs_display
+    away_secs = away_secs_display
+    gadget_secs = gadget_secs_display
+    screen_distraction_secs = screen_distraction_secs_display
+    paused_secs = paused_secs_display
+    
+    # Calculate display-consistent active time (sum of truncated categories)
+    active_secs_display = present_secs + away_secs + gadget_secs + screen_distraction_secs
+    
+    # For focus percentage, use the display values (already ints)
+    active_secs_float = float(active_secs_display)
+    
+    # Calculate focus percentage using float values for accuracy
     # This is guaranteed to be 0-100% since active_time = present + away + gadget + screen_distraction
-    if active_secs > 0:
-        focus_pct = (present_secs / active_secs) * 100.0
+    if active_secs_float > 0:
+        focus_pct = (present_secs / active_secs_float) * 100.0
     else:
         focus_pct = 0.0
     
@@ -1100,8 +1086,8 @@ def generate_report(
         stats_data.append(['Paused', _format_time_seconds(paused_secs)])
         row_types.append('paused')
     
-    # Always add Active Time (= present + away + gadget) and Focus Rate
-    stats_data.append(['Active Time', _format_time_seconds(active_secs)])
+    # Always add Active Time (= sum of truncated individual categories for display consistency)
+    stats_data.append(['Active Time', _format_time_seconds(active_secs_display)])
     row_types.append('active')
     stats_data.append(['Focus Rate', focus_pct_str])
     row_types.append('focus')

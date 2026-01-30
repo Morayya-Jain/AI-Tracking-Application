@@ -3,15 +3,17 @@
 import cv2
 import numpy as np
 import base64
-import json
 import logging
-import time
 from typing import Dict, Optional, Any
-import threading
 
 from openai import OpenAI
 
 import config
+from camera.base_detector import (
+    get_safe_default_result,
+    parse_detection_response,
+    DetectionCache
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +55,8 @@ class VisionDetector:
         
         self.client = OpenAI(api_key=self.api_key)
         
-        # Cache for reducing API calls (thread-safe)
-        self._cache_lock = threading.Lock()
-        self.last_detection_time = 0
-        self.last_detection_result = None
-        self.detection_cache_duration = 3.0  # Cache for 3 seconds (matches detection interval)
+        # Thread-safe cache for reducing API calls
+        self._cache = DetectionCache(cache_duration=3.0)  # Cache for 3 seconds
         
         # System prompt for caching (static instructions - OpenAI caches these)
         self.system_prompt = self._build_system_prompt()
@@ -179,11 +178,10 @@ RULES:
             - Device face-down or screen off on table: Always False
         """
         # Check cache (thread-safe)
-        current_time = time.time()
-        with self._cache_lock:
-            if use_cache and self.last_detection_result is not None and \
-               (current_time - self.last_detection_time) < self.detection_cache_duration:
-                return self.last_detection_result
+        if use_cache:
+            is_valid, cached_result = self._cache.get()
+            if is_valid and cached_result is not None:
+                return cached_result
         
         try:
             # Encode frame
@@ -230,41 +228,11 @@ RULES:
                 logger.error("Empty response from Vision API")
                 raise ValueError("Empty response from OpenAI Vision API")
             
-            # Try to extract JSON if there's extra text
-            content = content.strip()
-            
-            # Sometimes the response has backticks or extra text
-            if '```json' in content:
-                # Extract JSON from markdown code block
-                content = content.split('```json')[1].split('```')[0].strip()
-            elif '```' in content:
-                content = content.split('```')[1].split('```')[0].strip()
-            elif '{' in content and '}' in content:
-                # Extract just the JSON part
-                start = content.index('{')
-                end = content.rindex('}') + 1
-                content = content[start:end]
-            
-            # Parse JSON response
-            try:
-                result = json.loads(content)
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse JSON. Content: {content[:500]}")
-                raise
-            
-            # Validate and normalize result
-            detection_result = {
-                "person_present": result.get("person_present", False),
-                "at_desk": result.get("at_desk", True),  # Default True for backward compat
-                "gadget_visible": result.get("gadget_visible", False),
-                "gadget_confidence": float(result.get("gadget_confidence", 0.0)),
-                "distraction_type": result.get("distraction_type", "none")
-            }
+            # Parse and validate response using shared utility
+            detection_result = parse_detection_response(content)
             
             # Cache result (thread-safe)
-            with self._cache_lock:
-                self.last_detection_result = detection_result
-                self.last_detection_time = current_time
+            self._cache.set(detection_result)
             
             # Log detection
             if detection_result["gadget_visible"]:
@@ -276,16 +244,12 @@ RULES:
             
             return detection_result
             
+        except TimeoutError as e:
+            logger.warning(f"OpenAI Vision API timeout: {e}")
+            return get_safe_default_result()
         except Exception as e:
             logger.error(f"Vision API error: {e}")
-            # Return safe default
-            return {
-                "person_present": True,  # Assume present on error
-                "at_desk": True,  # Assume at desk on error
-                "gadget_visible": False,
-                "gadget_confidence": 0.0,
-                "distraction_type": "none"
-            }
+            return get_safe_default_result()
     
     def detect_presence(self, frame: np.ndarray) -> bool:
         """

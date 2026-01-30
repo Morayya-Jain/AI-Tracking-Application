@@ -5,16 +5,65 @@ from datetime import datetime
 import config
 
 
+def format_duration(seconds: float, full_precision: bool = False) -> str:
+    """
+    Format duration in seconds to human-readable string.
+    
+    This is the canonical time formatting function. All calculations should
+    use float seconds for precision, with truncation to int happening ONLY
+    here at display time.
+    
+    Args:
+        seconds: Duration in seconds (float for precision, truncated to int for display)
+        full_precision: If True, always show all non-zero time components
+                       including seconds even when hours > 0. Default False
+                       for compact display (omits seconds when hours present).
+    
+    Returns:
+        Formatted string like "1m 30s", "45s", "2h 15m", or with full_precision
+        "1h 30m 45s", "2h 0m 0s"
+    
+    Examples:
+        >>> format_duration(90)
+        "1m 30s"
+        >>> format_duration(3725)
+        "1h 2m"
+        >>> format_duration(3725, full_precision=True)
+        "1h 2m 5s"
+        >>> format_duration(0)
+        "0s"
+    """
+    # Truncate to int at display time only (floor, not round)
+    total_seconds = int(seconds) if seconds >= 0 else 0
+    
+    hours = total_seconds // 3600
+    remaining_seconds = total_seconds % 3600
+    mins = remaining_seconds // 60
+    secs = remaining_seconds % 60
+    
+    parts = []
+    
+    if hours > 0:
+        parts.append(f"{hours}h")
+    
+    if mins > 0 or (full_precision and hours > 0):
+        # Show minutes if non-zero, or if full_precision and hours exist
+        parts.append(f"{mins}m")
+    
+    if secs > 0 or full_precision:
+        # Show seconds if non-zero, or always if full_precision
+        if hours == 0 or full_precision:
+            parts.append(f"{secs}s")
+    
+    return " ".join(parts) if parts else "0s"
+
+
 def compute_statistics(events: List[Dict[str, Any]], total_duration: float) -> Dict[str, Any]:
     """
     Compute statistics from a list of session events.
     
-    All calculations use floats for full precision.
-    Truncation to int happens ONLY at final PDF display time.
-    
-    This ensures the total duration shown in PDF matches the GUI timer display,
-    which is what users expect. Individual log entries may show slightly different
-    totals when summed due to per-entry truncation at display time.
+    All calculations use floats for full precision. Truncation to int
+    happens ONLY at final display time in the PDF report.
     
     Args:
         events: List of event dictionaries with type, start, end, and duration
@@ -23,15 +72,14 @@ def compute_statistics(events: List[Dict[str, Any]], total_duration: float) -> D
     Returns:
         Dictionary containing statistics (seconds as floats for precision)
     """
-    # Initialize counters as floats
+    # Initialize counters as floats for full precision
     present_seconds = 0.0
     away_seconds = 0.0
     gadget_seconds = 0.0
     screen_distraction_seconds = 0.0
     paused_seconds = 0.0
     
-    # Sum up durations by event type using full precision (floats)
-    # Truncation happens only at final PDF display time to match GUI timer
+    # Sum up durations by event type using full float precision
     for event in events:
         duration = float(event.get("duration_seconds", 0))
         event_type = event.get("type")
@@ -47,7 +95,7 @@ def compute_statistics(events: List[Dict[str, Any]], total_duration: float) -> D
         elif event_type == config.EVENT_PAUSED:
             paused_seconds += duration
     
-    # Calculate derived values
+    # Calculate derived values (floats for precision)
     # Screen distraction counts as active time (user is at desk, just distracted)
     active_seconds = present_seconds + away_seconds + gadget_seconds + screen_distraction_seconds
     distracted_seconds = away_seconds + gadget_seconds + screen_distraction_seconds
@@ -56,7 +104,7 @@ def compute_statistics(events: List[Dict[str, Any]], total_duration: float) -> D
     # Consolidate events for timeline (keeps float precision)
     consolidated = consolidate_events(events)
     
-    # Return float seconds - truncation happens at PDF display time
+    # Return float seconds - truncation happens at PDF display time only
     return {
         "total_seconds": total_seconds,
         "present_seconds": present_seconds,
@@ -85,8 +133,7 @@ def consolidate_events(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     This merges consecutive events of the same type to reduce noise
     and creates a cleaner timeline view.
     
-    Keeps float precision - truncation happens at PDF display time.
-    This ensures consolidated totals match session duration accurately.
+    Keeps float precision - truncation happens at PDF display time only.
     
     Args:
         events: List of raw event dictionaries
@@ -104,7 +151,7 @@ def consolidate_events(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         event_type = event.get("type")
         start_time = event.get("start")
         end_time = event.get("end")
-        # Keep full precision - truncation happens at PDF display time
+        # Keep full float precision
         duration = float(event.get("duration_seconds", 0))
         
         # If this is the same type as current, extend the current event
@@ -135,16 +182,17 @@ def _format_event(event: Dict[str, Any]) -> Dict[str, Any]:
     """
     Format an event for display with human-readable times and durations.
     
-    Keeps float precision - truncation to int happens at PDF display time.
+    Keeps float precision - truncation happens at PDF display time only.
     
     Args:
-        event: Event dictionary with start, end, type, and duration
+        event: Event dictionary with start, end, type, and duration (float)
         
     Returns:
         Formatted event dictionary with duration_seconds as float
     """
     start = datetime.fromisoformat(event["start"])
     end = datetime.fromisoformat(event["end"])
+    # Keep full float precision
     duration_seconds = float(event["duration_seconds"])
     
     # Create readable event type labels
@@ -161,7 +209,7 @@ def _format_event(event: Dict[str, Any]) -> Dict[str, Any]:
         "type_label": type_labels.get(event["type"], event["type"]),
         "start": start.strftime("%I:%M %p"),
         "end": end.strftime("%I:%M %p"),
-        "duration_seconds": duration_seconds,  # Float precision
+        "duration_seconds": duration_seconds,  # Float for precision
         "duration_minutes": duration_seconds / 60.0  # For backward compatibility
     }
 
@@ -175,7 +223,7 @@ def get_focus_percentage(stats: Dict[str, Any]) -> float:
     This ensures the focus rate is always between 0% and 100%.
     
     Args:
-        stats: Statistics dictionary from compute_statistics
+        stats: Statistics dictionary from compute_statistics (values are floats)
         
     Returns:
         Focus percentage (0-100), never exceeds 100%. Returns 0.0 for invalid/empty stats.
@@ -185,7 +233,7 @@ def get_focus_percentage(stats: Dict[str, Any]) -> float:
         return 0.0
     
     try:
-        # Use float seconds from stats
+        # Use int seconds from stats (convert to float for division)
         if "active_seconds" in stats:
             active_time = float(stats.get("active_seconds", 0) or 0)
             present_time = float(stats.get("present_seconds", 0) or 0)

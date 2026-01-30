@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 import config
+from tracking.analytics import format_duration
 
 logger = logging.getLogger(__name__)
 
@@ -177,6 +178,8 @@ class UsageLimiter:
         """
         Format seconds as human-readable time string.
         
+        Delegates to the canonical format_duration() function from analytics.
+        
         Args:
             seconds: Number of seconds.
             full_precision: If True, always show all non-zero time components
@@ -187,25 +190,7 @@ class UsageLimiter:
             Formatted string like "1h 30m" or "45m" or "30s".
             With full_precision: "1h 30m 45s" or "2h 0m 0s".
         """
-        if seconds < 0:
-            return "0s"
-        
-        hours = seconds // 3600
-        minutes = (seconds % 3600) // 60
-        secs = seconds % 60
-        
-        parts = []
-        if hours > 0:
-            parts.append(f"{hours}h")
-        if minutes > 0 or (full_precision and hours > 0):
-            # Show minutes if non-zero, or if full_precision and hours exist
-            parts.append(f"{minutes}m")
-        if secs > 0 or full_precision:
-            # Show seconds if non-zero, or always if full_precision
-            if hours == 0 or full_precision:
-                parts.append(f"{secs}s")
-        
-        return " ".join(parts) if parts else "0s"
+        return format_duration(float(seconds), full_precision=full_precision)
     
     def get_status_summary(self) -> str:
         """
