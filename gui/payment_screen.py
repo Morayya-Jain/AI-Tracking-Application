@@ -316,6 +316,12 @@ class PaymentScreen:
         # Initialize scaling manager for responsive UI
         self.scaling_manager = ScalingManager(self.root)
         
+        # Calculate scale factor based on screen dimensions
+        self._calculate_scale()
+        
+        # Create scaled fonts
+        self._create_fonts()
+        
         # Pending session for verification
         self._pending_session_id: Optional[str] = None
         
@@ -357,6 +363,94 @@ class PaymentScreen:
         """Clear global status label when user types."""
         if self.status_label:
             self.status_label.config(text="")
+    
+    def _calculate_scale(self):
+        """
+        Calculate the scale factor based on screen dimensions.
+        
+        Uses a reference of 1920x1080 for scale calculations.
+        """
+        self.screen_scale = min(
+            self.scaling_manager.screen_width / 1920,
+            self.scaling_manager.screen_height / 1080,
+            1.0
+        )
+        # Minimum 65% scale for payment screen to ensure readability
+        self.screen_scale = max(self.screen_scale, 0.65)
+    
+    def _create_fonts(self):
+        """
+        Create scaled fonts for the payment screen UI.
+        
+        Scales fonts based on the calculated screen_scale factor.
+        """
+        # Font families
+        font_display = "Georgia"
+        font_interface = "Helvetica"
+        
+        # Base font sizes and their bounds (base, min, max)
+        font_bounds = {
+            "heading": (24, 16, 28),
+            "body": (14, 11, 16),
+            "body_bold": (14, 11, 16),
+            "small": (12, 10, 14),
+            "caption": (12, 10, 14),
+            "input": (14, 11, 16),
+        }
+        
+        def get_scaled_size(font_key: str) -> int:
+            """Get scaled font size within bounds."""
+            base_size, min_size, max_size = font_bounds.get(font_key, (14, 11, 16))
+            scaled = int(base_size * self.screen_scale)
+            return max(min_size, min(scaled, max_size))
+        
+        # Create font objects
+        self.font_heading = tkfont.Font(
+            family=font_display, size=get_scaled_size("heading"), weight="bold"
+        )
+        self.font_body = tkfont.Font(
+            family=font_interface, size=get_scaled_size("body"), weight="normal"
+        )
+        self.font_body_bold = tkfont.Font(
+            family=font_interface, size=get_scaled_size("body_bold"), weight="bold"
+        )
+        self.font_small = tkfont.Font(
+            family=font_interface, size=get_scaled_size("small"), weight="normal"
+        )
+        self.font_caption = tkfont.Font(
+            family=font_interface, size=get_scaled_size("caption"), weight="bold"
+        )
+        self.font_input = tkfont.Font(
+            family=font_interface, size=get_scaled_size("input"), weight="normal"
+        )
+    
+    def _scale_dimension(self, base_value: int, min_value: Optional[int] = None) -> int:
+        """
+        Scale a dimension by the screen scale factor.
+        
+        Args:
+            base_value: The base dimension value.
+            min_value: Optional minimum value (won't go below this).
+        
+        Returns:
+            Scaled dimension value.
+        """
+        scaled = int(base_value * self.screen_scale)
+        if min_value is not None:
+            return max(scaled, min_value)
+        return scaled
+    
+    def _scale_padding(self, base_padding: int) -> int:
+        """
+        Scale padding/margin by the screen scale factor.
+        
+        Args:
+            base_padding: The base padding value.
+        
+        Returns:
+            Scaled padding value (minimum 2).
+        """
+        return max(2, int(base_padding * self.screen_scale))
 
     def _setup_ui(self):
         """Set up the payment screen UI."""
@@ -372,11 +466,14 @@ class PaymentScreen:
         self.center_container = tk.Frame(self.main_frame, bg=COLORS["bg"])
         self.center_container.place(relx=0.5, rely=0.5, anchor="center")
 
+        # Scaled padding values
+        header_bottom_pad = self._scale_padding(38)
+        
         # Header (Logo)
         header_frame = tk.Frame(self.center_container, bg=COLORS["bg"])
-        header_frame.pack(fill="x", pady=(0, 25))
+        header_frame.pack(fill="x", pady=(0, header_bottom_pad))
         
-        # Load and display logo
+        # Load and display logo (scaled)
         logo_loaded = False
         if PIL_AVAILABLE:
             logo_path = ASSETS_DIR / "logo_with_text.png"
@@ -388,8 +485,9 @@ class PaymentScreen:
                     if img.mode != 'RGBA':
                         img = img.convert('RGBA')
                     
-                    # Resize
-                    h = 65
+                    # Resize with scaling
+                    base_logo_height = 65
+                    h = self._scale_dimension(base_logo_height, min_value=45)
                     aspect = img.width / img.height
                     img = img.resize((int(h * aspect), h), Image.Resampling.LANCZOS)
                     self.logo_image = ImageTk.PhotoImage(img)
@@ -399,7 +497,7 @@ class PaymentScreen:
                         image=self.logo_image,
                         bg=COLORS["bg"]
                     )
-                    logo_label.pack() # Centered by default
+                    logo_label.pack()
                     logo_loaded = True
                 except Exception as e:
                     logger.warning(f"Could not load logo: {e}")
@@ -409,95 +507,129 @@ class PaymentScreen:
             title_label = tk.Label(
                 header_frame,
                 text="BrainDock",
-                font=FONTS["heading"],
+                font=self.font_heading,
                 fg=COLORS["text_primary"],
                 bg=COLORS["bg"]
             )
-            title_label.pack() # Centered by default
+            title_label.pack()
         
         # Main Card Container - scale based on screen size
         base_card_width, base_card_height = 550, 420
-        screen_scale = min(
-            self.scaling_manager.screen_width / 1920,
-            self.scaling_manager.screen_height / 1080,
-            1.0
-        )
-        screen_scale = max(screen_scale, 0.75)  # Minimum 75% scale for payment screen
+        self.card_width = self._scale_dimension(base_card_width, min_value=400)
+        self.card_height = self._scale_dimension(base_card_height, min_value=320)
         
-        self.card_width = int(base_card_width * screen_scale)
-        self.card_height = int(base_card_height * screen_scale)
-        
-        self.card_bg = Card(self.center_container, width=self.card_width, height=self.card_height, bg_color=COLORS["surface"])
+        self.card_bg = Card(self.center_container, width=self.card_width, height=self.card_height, radius=28, bg_color=COLORS["surface"])
         self.card_bg.pack()
         
         # Inner Frame for widgets (placed on top of the card canvas)
-        inner_padding = int(30 * screen_scale)
+        inner_padding = self._scale_padding(30)
         self.inner_frame = tk.Frame(self.center_container, bg=COLORS["surface"])
         self.inner_frame.place(in_=self.card_bg, relx=0.5, y=inner_padding, anchor="n", width=self.card_width-inner_padding*2, height=self.card_height-inner_padding*2)
         
+        # Scaled padding values
+        title_top_pad = self._scale_padding(15)
+        title_bottom_pad = self._scale_padding(10)
+        price_bottom_pad = self._scale_padding(15)
+        btn_pad = self._scale_padding(8)
+        divider_top_pad = self._scale_padding(20)
+        divider_bottom_pad = self._scale_padding(12)
+        section_pad = self._scale_padding(15)
+        row_pad = self._scale_padding(15)
+        
         # 1. Title Section
-        tk.Label(self.inner_frame, text="Activate Session", font=FONTS["heading"], bg=COLORS["surface"], fg=COLORS["text_primary"]).pack(pady=(15, 10))
+        tk.Label(
+            self.inner_frame, 
+            text="Activate Session", 
+            font=self.font_heading, 
+            bg=COLORS["surface"], 
+            fg=COLORS["text_primary"]
+        ).pack(pady=(title_top_pad, title_bottom_pad))
         
         price_text = "AUD 1.99"
         if hasattr(config, 'PRODUCT_PRICE_DISPLAY'):
             price_text = config.PRODUCT_PRICE_DISPLAY.split(" - ")[0] if " - " in config.PRODUCT_PRICE_DISPLAY else config.PRODUCT_PRICE_DISPLAY
 
         # Price label - unified styling, no hyphen
-        tk.Label(self.inner_frame, text=f"{price_text} · One-time payment for unlimited use", font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text_secondary"]).pack(pady=(0, 15))
+        tk.Label(
+            self.inner_frame, 
+            text=f"{price_text} · One-time payment for unlimited use", 
+            font=self.font_body, 
+            bg=COLORS["surface"], 
+            fg=COLORS["text_secondary"]
+        ).pack(pady=(0, price_bottom_pad))
         
-        # 2. Primary Action (Purchase)
+        # 2. Primary Action (Purchase) - scaled button
+        btn_width = self._scale_dimension(260, min_value=200)
+        btn_height = self._scale_dimension(55, min_value=44)
         self.btn_pay = RoundedButton(
             self.inner_frame, 
             text="Pay via Card", 
-            width=260, 
-            height=55, 
+            width=btn_width, 
+            height=btn_height, 
             bg_color=COLORS["button_bg"], 
             hover_color=COLORS["button_bg_hover"],
             text_color="#FFFFFF", 
             font_type="body_bold",
             command=self._on_purchase_click
         )
-        self.btn_pay.pack(pady=8)
+        self.btn_pay.pack(pady=btn_pad)
         
         # Stripe availability warning
         if not STRIPE_AVAILABLE:
             stripe_warning = tk.Label(
                 self.inner_frame,
                 text="(Stripe SDK not installed)",
-                font=FONTS["small"],
+                font=self.font_small,
                 fg=COLORS["status_gadget"],
                 bg=COLORS["surface"]
             )
-            stripe_warning.pack(pady=(0, 10))
+            stripe_warning.pack(pady=(0, self._scale_padding(10)))
         elif not self.stripe.is_available():
             stripe_warning = tk.Label(
                 self.inner_frame,
                 text="(Payment not configured)",
-                font=FONTS["small"],
+                font=self.font_small,
                 fg=COLORS["status_gadget"],
                 bg=COLORS["surface"]
             )
-            stripe_warning.pack(pady=(0, 10))
+            stripe_warning.pack(pady=(0, self._scale_padding(10)))
         
         # 3. Divider
         div_frame = tk.Frame(self.inner_frame, bg=COLORS["surface"])
-        div_frame.pack(fill="x", pady=(20, 12), padx=15)
+        div_frame.pack(fill="x", pady=(divider_top_pad, divider_bottom_pad), padx=section_pad)
         
         tk.Frame(div_frame, bg=COLORS["border"], height=1).pack(side="left", fill="x", expand=True)
-        tk.Label(div_frame, text="OR", font=FONTS["small"], bg=COLORS["surface"], fg=COLORS["text_secondary"], padx=15).pack(side="left")
+        tk.Label(
+            div_frame, 
+            text="OR", 
+            font=self.font_small, 
+            bg=COLORS["surface"], 
+            fg=COLORS["text_secondary"], 
+            padx=section_pad
+        ).pack(side="left")
         tk.Frame(div_frame, bg=COLORS["border"], height=1).pack(side="left", fill="x", expand=True)
         
         # 4. Stripe Session ID Section (always visible)
-        tk.Label(self.inner_frame, text="(Already paid?) Verify with Stripe session ID", font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text_secondary"], anchor="w").pack(fill="x", pady=(15, 8), padx=15)
+        tk.Label(
+            self.inner_frame, 
+            text="(Already paid?) Verify with Stripe session ID", 
+            font=self.font_body, 
+            bg=COLORS["surface"], 
+            fg=COLORS["text_secondary"], 
+            anchor="w"
+        ).pack(fill="x", pady=(section_pad, btn_pad), padx=section_pad)
         
         verify_row = tk.Frame(self.inner_frame, bg=COLORS["surface"])
-        verify_row.pack(fill="x", padx=15)
+        verify_row.pack(fill="x", padx=section_pad)
         
+        # Scaled verify button
+        verify_btn_width = self._scale_dimension(100, min_value=80)
+        verify_btn_height = self._scale_dimension(44, min_value=36)
         self.verify_button = RoundedButton(
             verify_row, 
             text="Verify", 
-            width=100, 
-            height=44, 
+            width=verify_btn_width, 
+            height=verify_btn_height, 
             radius=12,
             bg_color=COLORS["button_bg"], 
             hover_color=COLORS["button_bg_hover"],
@@ -507,7 +639,7 @@ class PaymentScreen:
         self.verify_button.pack(side="right", anchor="n")
         
         self.session_entry = StyledEntry(verify_row, placeholder="cs_live_...")
-        self.session_entry.pack(side="left", fill="x", expand=True, padx=(0, 10), anchor="n")
+        self.session_entry.pack(side="left", fill="x", expand=True, padx=(0, self._scale_padding(10)), anchor="n")
         self.session_entry.bind_return(self._on_verify_payment)
         self.session_entry.entry.bind("<Key>", self._clear_global_status, add="+")
         
@@ -515,22 +647,23 @@ class PaymentScreen:
         self.status_label = tk.Label(
             self.inner_frame,
             text="",
-            font=FONTS["body"],
+            font=self.font_body,
             fg=COLORS["text_secondary"],
             bg=COLORS["surface"]
         )
-        self.status_label.pack(pady=(5, 0))
+        self.status_label.pack(pady=(self._scale_padding(5), 0))
         
         # Skip for development (only if configured)
         if getattr(config, 'SKIP_LICENSE_CHECK', False):
+            skip_font_size = max(8, int(10 * self.screen_scale))
             skip_label = tk.Label(
                 self.center_container,
                 text="[Development Mode - Click to Skip]",
-                font=tkfont.Font(size=10, underline=True),
+                font=tkfont.Font(size=skip_font_size, underline=True),
                 fg=COLORS["text_secondary"],
                 bg=COLORS["bg"]
             )
-            skip_label.pack(pady=(20, 0))
+            skip_label.pack(pady=(self._scale_padding(20), 0))
             skip_label.bind("<Button-1>", lambda e: self._skip_for_dev())
     
     def _update_status(self, message: str, is_error: bool = False, is_success: bool = False):
