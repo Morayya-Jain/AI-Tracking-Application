@@ -1,7 +1,34 @@
-import tkinter as tk
-from tkinter import font as tkfont
-from typing import Dict, Tuple, Optional
+"""
+BrainDock UI Components - CustomTkinter Edition
+
+This module provides reusable UI components and a scaling system for the
+BrainDock application, built on CustomTkinter for consistent cross-platform
+appearance.
+"""
 import sys
+from typing import Dict, Tuple, Optional, Callable
+import customtkinter as ctk
+from customtkinter import CTkFont
+
+# Import font loader for bundled fonts
+try:
+    from gui.font_loader import (
+        load_bundled_fonts, get_font_sans, get_font_serif,
+        FONT_SANS, FONT_SERIF, FONT_SANS_FALLBACK, FONT_SERIF_FALLBACK
+    )
+except ImportError:
+    # Fallback if font_loader not available
+    def load_bundled_fonts() -> bool:
+        return False
+    def get_font_sans() -> str:
+        return "Helvetica"
+    def get_font_serif() -> str:
+        return "Georgia"
+    FONT_SANS = "Helvetica"
+    FONT_SERIF = "Georgia"
+    FONT_SANS_FALLBACK = "Helvetica"
+    FONT_SERIF_FALLBACK = "Georgia"
+
 
 # --- Scaling System ---
 
@@ -13,73 +40,34 @@ REFERENCE_HEIGHT = 950
 MIN_WIDTH = 800
 MIN_HEIGHT = 680
 
-# Font scaling bounds (base_size: (min_size, max_size))
+# Font scaling bounds (base_size, min_size, max_size)
 FONT_BOUNDS = {
-    "timer": (64, 36, 80),      # Base 64pt, min 36, max 80
-    "stat": (25, 16, 32),       # Base 25pt, min 16, max 32
+    "timer": (48, 32, 64),      # Base 48pt, min 32, max 64 (reduced from 64)
+    "stat": (20, 14, 26),       # Base 20pt, min 14, max 26 (reduced from 25)
     "title": (24, 16, 32),      # Base 24pt, min 16, max 32
-    "status": (24, 16, 32),     # Base 24pt, min 16, max 32
+    "status": (18, 14, 24),     # Base 18pt, min 14, max 24 (reduced from 24)
     "body": (14, 11, 18),       # Base 14pt, min 11, max 18
     "button": (14, 11, 18),     # Base 14pt, min 11, max 18
     "small": (12, 10, 16),      # Base 12pt, min 10, max 16
-    "badge": (12, 10, 16),      # Base 12pt, min 10, max 16
-    "caption": (12, 10, 16),    # Base 12pt, min 10, max 16
+    "badge": (10, 9, 14),       # Base 10pt, min 9, max 14 (reduced from 12)
+    "caption": (11, 9, 14),     # Base 11pt, min 9, max 14 (reduced from 12)
+    "heading": (24, 16, 32),    # For payment screen
+    "subheading": (18, 14, 24), # For payment screen
+    "input": (14, 11, 18),      # For input fields
+    "body_bold": (14, 11, 18),  # Bold body text
+    "display": (32, 24, 40),    # Large display text
 }
+
+# Which font keys use serif (display) vs sans (interface)
+SERIF_FONTS = {"timer", "title", "stat", "display", "heading", "subheading"}
+
+# Which font keys are bold
+BOLD_FONTS = {"timer", "title", "stat", "heading", "caption", "body_bold", "button", "badge"}
 
 
 def _is_bundled() -> bool:
     """Check if running from a PyInstaller bundle."""
     return getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
-
-
-def normalize_tk_scaling(root: tk.Tk) -> None:
-    """
-    Normalize tk scaling for consistent font rendering across terminal and bundled apps.
-    
-    On macOS, bundled apps with NSHighResolutionCapable report different DPI
-    than terminal apps, causing fonts to render at incorrect sizes. This function
-    detects the environment and sets tk scaling to ensure consistent rendering.
-    
-    MUST be called before creating any fonts or widgets.
-    
-    Args:
-        root: The root Tkinter window (before any widgets are created).
-    """
-    if sys.platform != "darwin":
-        return  # Only needed on macOS
-    
-    root.update_idletasks()
-    
-    try:
-        # Get the current tk scaling factor
-        current_scaling = root.tk.call('tk', 'scaling')
-        
-        # Get the actual DPI reported by the system
-        dpi = root.winfo_fpixels('1i')
-        
-        # Standard macOS DPI is 72 points per inch
-        # On Retina displays, DPI can be 144 or higher
-        # Terminal apps typically report 72 DPI with tk scaling ~1.0
-        # Bundled apps with NSHighResolutionCapable may report higher DPI
-        
-        if _is_bundled():
-            # For bundled apps, normalize to standard macOS scaling
-            # This ensures fonts render at the same size as in terminal
-            # Target: tk scaling of 1.0 with 72 DPI baseline
-            if dpi > 100:
-                # Retina display detected - bundled app reports physical DPI
-                # Set tk scaling to 1.0 for consistent font rendering
-                # (fonts are specified in points and should render correctly at 1.0)
-                root.tk.call('tk', 'scaling', 1.0)
-            else:
-                # Non-Retina or DPI already normalized
-                # Ensure scaling is 1.0 for consistency
-                if current_scaling != 1.0:
-                    root.tk.call('tk', 'scaling', 1.0)
-        # For terminal apps, leave scaling unchanged (already correct)
-        
-    except Exception:
-        pass  # If detection fails, leave tk defaults unchanged
 
 
 class ScalingManager:
@@ -88,24 +76,26 @@ class ScalingManager:
     
     Handles screen detection, scale factor calculation, and provides
     utilities for scaling dimensions, fonts, and padding.
+    
+    Note: CustomTkinter handles DPI scaling automatically, so this class
+    focuses on responsive layout scaling based on window/screen size.
     """
     
-    def __init__(self, root: tk.Tk):
+    def __init__(self, root: ctk.CTk):
         """
         Initialize the scaling manager.
         
         Args:
-            root: The root Tkinter window.
+            root: The root CustomTkinter window.
         """
         self.root = root
         self._current_scale = 1.0
         self._screen_width = 0
         self._screen_height = 0
-        self._fonts: Dict[str, tkfont.Font] = {}
+        self._fonts: Dict[str, CTkFont] = {}
         
-        # Normalize tk scaling for consistent font rendering (bundled vs terminal)
-        # This MUST happen before any fonts or screen measurements
-        normalize_tk_scaling(root)
+        # Load bundled fonts at initialization
+        load_bundled_fonts()
         
         # Detect screen size
         self._detect_screen_size()
@@ -114,39 +104,12 @@ class ScalingManager:
         """
         Detect the current screen dimensions for window sizing.
         
-        After normalize_tk_scaling() sets tk scaling to 1.0, screen dimensions
-        should be reported consistently. We only apply additional normalization
-        if we detect physical pixels on Retina displays in bundled apps.
-        
-        Note: normalize_tk_scaling() must be called before this method.
+        CustomTkinter handles DPI scaling automatically, so we just
+        get the screen dimensions directly.
         """
         self.root.update_idletasks()
-        
-        # Get raw screen dimensions
-        raw_width = self.root.winfo_screenwidth()
-        raw_height = self.root.winfo_screenheight()
-        
-        # On macOS bundled apps, screen dimensions may still be in physical pixels
-        # even after tk scaling normalization. Detect and convert if needed.
-        if sys.platform == "darwin" and _is_bundled():
-            try:
-                # Get the tk scaling factor (should be 1.0 after normalization)
-                tk_scaling = self.root.tk.call('tk', 'scaling')
-                
-                # Get actual DPI
-                dpi = self.root.winfo_fpixels('1i')
-                
-                # If width suggests physical pixels on Retina (>2000 for most Macs)
-                # and we're in a bundled app, normalize to logical pixels
-                if raw_width > 2000 and dpi > 100:
-                    scale_factor = dpi / 72.0
-                    raw_width = int(raw_width / scale_factor)
-                    raw_height = int(raw_height / scale_factor)
-            except Exception:
-                pass  # Use raw values if detection fails
-        
-        self._screen_width = raw_width
-        self._screen_height = raw_height
+        self._screen_width = self.root.winfo_screenwidth()
+        self._screen_height = self.root.winfo_screenheight()
     
     @property
     def screen_width(self) -> int:
@@ -218,14 +181,13 @@ class ScalingManager:
         Args:
             window_width: Current window width.
             window_height: Current window height.
-            threshold: Minimum scale change to trigger update (default 2% for smoother scaling).
+            threshold: Minimum scale change to trigger update (default 2%).
         
         Returns:
             True if scale changed significantly, False otherwise.
         """
         new_scale = self.calculate_scale(window_width, window_height)
         
-        # Update if scale changed beyond threshold (smaller = smoother)
         if abs(new_scale - self._current_scale) > threshold:
             self._current_scale = new_scale
             return True
@@ -279,14 +241,28 @@ class ScalingManager:
             Scaled font size within bounds.
         """
         if font_key not in FONT_BOUNDS:
-            # Default to body font if key not found
             font_key = "body"
         
         base_size, min_size, max_size = FONT_BOUNDS[font_key]
         scaled_size = int(base_size * self._current_scale)
         
-        # Clamp to bounds
         return max(min_size, min(scaled_size, max_size))
+    
+    def get_scaled_font(self, font_key: str) -> CTkFont:
+        """
+        Get a CTkFont object scaled appropriately.
+        
+        Args:
+            font_key: Key from FONT_BOUNDS (e.g., "timer", "title", "body").
+        
+        Returns:
+            CTkFont object with appropriate family, size, and weight.
+        """
+        size = self.scale_font_size(font_key)
+        family = get_font_serif() if font_key in SERIF_FONTS else get_font_sans()
+        weight = "bold" if font_key in BOLD_FONTS else "normal"
+        
+        return CTkFont(family=family, size=size, weight=weight)
     
     def get_popup_size(
         self, 
@@ -302,19 +278,16 @@ class ScalingManager:
         Args:
             base_width: Base popup width.
             base_height: Base popup height.
-            use_window_scale: If True, scale based on current window. If False, use screen.
-            min_width: Optional minimum width to prevent content clipping.
-            min_height: Optional minimum height to prevent buttons being hidden.
+            use_window_scale: If True, scale based on current window.
+            min_width: Optional minimum width.
+            min_height: Optional minimum height.
         
         Returns:
             Tuple of (width, height) for the popup.
         """
         if use_window_scale:
-            # Use the current window scale for popup sizing
-            # This ensures popups match the current main window size
-            popup_scale = max(self._current_scale, 0.6)  # Minimum 60%
+            popup_scale = max(self._current_scale, 0.6)
         else:
-            # Scale based on screen size relative to 1920x1080
             popup_scale = min(
                 self._screen_width / 1920,
                 self._screen_height / 1080,
@@ -325,7 +298,6 @@ class ScalingManager:
         width = int(base_width * popup_scale)
         height = int(base_height * popup_scale)
         
-        # Enforce minimum dimensions to prevent content clipping
         if min_width is not None:
             width = max(width, min_width)
         if min_height is not None:
@@ -340,15 +312,15 @@ class ScalingManager:
         Returns:
             Scale factor for popup fonts (based on current window scale).
         """
-        return max(self._current_scale, 0.7)  # Minimum 70% for readability
+        return max(self._current_scale, 0.7)
 
 
-def get_screen_scale_factor(root: tk.Tk) -> float:
+def get_screen_scale_factor(root: ctk.CTk) -> float:
     """
     Get a scale factor based on screen size (utility function).
     
     Args:
-        root: Tkinter root window.
+        root: CustomTkinter root window.
     
     Returns:
         Scale factor relative to 1920x1080.
@@ -357,285 +329,353 @@ def get_screen_scale_factor(root: tk.Tk) -> float:
     screen_width = root.winfo_screenwidth()
     screen_height = root.winfo_screenheight()
     
-    # Normalize for Retina displays on macOS bundled apps
-    if sys.platform == "darwin" and _is_bundled() and screen_width > 2000:
-        try:
-            dpi = root.winfo_fpixels('1i')
-            if dpi > 100:
-                scale_factor = dpi / 72.0
-                screen_width = int(screen_width / scale_factor)
-                screen_height = int(screen_height / scale_factor)
-        except Exception:
-            pass
-    
     scale = min(screen_width / 1920, screen_height / 1080, 1.0)
-    return max(scale, 0.6)  # Minimum 60% scale
+    return max(scale, 0.6)
 
 
 # --- Design System Constants (Seraphic Focus) ---
 COLORS = {
-    "bg": "#F9F8F4",          # Warm Cream
-    "surface": "#FFFFFF",      # White Cards
-    "text_primary": "#1C1C1E", # Sharp Black
+    "bg": "#F9F8F4",           # Warm Cream
+    "bg_primary": "#F9F8F4",   # Alias for bg
+    "surface": "#FFFFFF",       # White Cards
+    "text_primary": "#1C1C1E",  # Sharp Black
     "text_secondary": "#8E8E93", # System Gray
-    "accent": "#2C3E50",       # Dark Blue/Grey
-    "button_bg": "#1C1C1E",    # Black for primary actions
+    "accent": "#2C3E50",        # Dark Blue/Grey
+    "button_bg": "#1C1C1E",     # Black for primary actions
     "button_bg_hover": "#333333", # Dark grey for hover
     "button_text": "#FFFFFF",
     "border": "#E5E5EA",
     "shadow_light": "#E5E5EA", 
     "shadow_lighter": "#F2F2F7",
-    "success": "#34C759",      # Subtle green
-    "input_bg": "#F2F0EB",     # Light beige for inputs
+    "success": "#34C759",       # Subtle green
+    "input_bg": "#F2F0EB",      # Light beige for inputs
     "link": "#2C3E50",          # Link color
     "status_gadget": "#EF4444", # Red for errors
     "button_start": "#34C759",  # Green for success/start
-    "button_start_hover": "#2DB84C"
+    "button_start_hover": "#2DB84C",
+    "transparent": "transparent",
 }
 
+# Font tuples for backward compatibility
+# These use bundled fonts (Inter/Lora) when available
+def _get_font_tuple(family_type: str, size: int, weight: str = "normal") -> tuple:
+    """Get a font tuple with the appropriate family."""
+    family = get_font_serif() if family_type == "serif" else get_font_sans()
+    if weight == "bold":
+        return (family, size, "bold")
+    return (family, size)
+
+
+# FONTS dict for backward compatibility with existing code
 FONTS = {
-    "display": ("Georgia", 32, "bold"),
-    "heading": ("Georgia", 24, "bold"),
-    "subheading": ("Georgia", 18),
-    "body": ("Helvetica", 14),
-    "body_bold": ("Helvetica", 14, "bold"),
-    "caption": ("Helvetica", 12, "bold"),
-    "small": ("Helvetica", 12),
-    "input": ("Helvetica", 14)
+    "display": (get_font_serif(), 32, "bold"),
+    "heading": (get_font_serif(), 24, "bold"),
+    "subheading": (get_font_serif(), 18),
+    "body": (get_font_sans(), 14),
+    "body_bold": (get_font_sans(), 14, "bold"),
+    "caption": (get_font_sans(), 12, "bold"),
+    "small": (get_font_sans(), 12),
+    "input": (get_font_sans(), 14),
 }
 
-class RoundedButton(tk.Canvas):
-    def __init__(self, parent, text, command=None, width=200, height=50, radius=25, bg_color=COLORS["button_bg"], hover_color=None, text_color=COLORS["button_text"], font_type="body_bold", canvas_bg=None):
-        # Use parent's background color if not specified, fallback to surface color
-        if canvas_bg is None:
-            try:
-                canvas_bg = parent.cget("bg")
-            except (tk.TclError, AttributeError):
-                canvas_bg = COLORS["surface"]
+
+def get_ctk_font(font_key: str, scale: float = 1.0) -> CTkFont:
+    """
+    Get a CTkFont object for the given font key.
+    
+    Args:
+        font_key: Key from FONT_BOUNDS.
+        scale: Scale factor to apply (default 1.0).
+    
+    Returns:
+        CTkFont object.
+    """
+    if font_key not in FONT_BOUNDS:
+        font_key = "body"
+    
+    base_size, min_size, max_size = FONT_BOUNDS[font_key]
+    size = int(max(min_size, min(max_size, base_size * scale)))
+    family = get_font_serif() if font_key in SERIF_FONTS else get_font_sans()
+    weight = "bold" if font_key in BOLD_FONTS else "normal"
+    
+    return CTkFont(family=family, size=size, weight=weight)
+
+
+# --- CustomTkinter Widget Wrappers ---
+
+class RoundedButton(ctk.CTkButton):
+    """
+    A rounded button using CustomTkinter's CTkButton.
+    
+    This is a drop-in replacement for the old Canvas-based RoundedButton.
+    """
+    
+    def __init__(
+        self, 
+        parent, 
+        text: str,
+        command: Optional[Callable] = None,
+        width: int = 200,
+        height: int = 50,
+        radius: int = 25,
+        bg_color: str = COLORS["button_bg"],
+        hover_color: Optional[str] = None,
+        text_color: str = COLORS["button_text"],
+        font_type: str = "body_bold",
+        font: Optional[CTkFont] = None,
+        canvas_bg: Optional[str] = None,  # Ignored, for compatibility
+        **kwargs
+    ):
+        """
+        Initialize a rounded button.
         
-        super().__init__(parent, width=width, height=height, bg=canvas_bg, highlightthickness=0)
-        self.command = command
-        self.radius = radius
+        Args:
+            parent: Parent widget.
+            text: Button text.
+            command: Callback function when clicked.
+            width: Button width.
+            height: Button height.
+            radius: Corner radius.
+            bg_color: Background color.
+            hover_color: Hover color (defaults to bg_color).
+            text_color: Text color.
+            font_type: Font key from FONTS.
+            font: Optional CTkFont to use directly.
+            canvas_bg: Ignored (for backward compatibility).
+        """
+        # Get font from font_type if not provided
+        if font is None:
+            font = get_ctk_font(font_type)
+        
+        super().__init__(
+            parent,
+            text=text,
+            command=command,
+            width=width,
+            height=height,
+            corner_radius=radius,
+            fg_color=bg_color,
+            hover_color=hover_color or bg_color,
+            text_color=text_color,
+            font=font,
+            **kwargs
+        )
+        
+        # Store original values for compatibility
+        self._original_bg = bg_color
         self.bg_color = bg_color
         self.hover_color = hover_color or bg_color
         self.text_color = text_color
         self.text_str = text
         self.font_type = font_type
-        self._original_bg = bg_color
-        self._canvas_bg = canvas_bg
-        
-        self.bind("<Button-1>", self._on_click)
-        self.bind("<Enter>", self._on_enter)
-        self.bind("<Leave>", self._on_leave)
-        
-        self.draw()
-
-    def draw(self, offset=0):
-        self.delete("all")
-        w = int(self["width"])
-        h = int(self["height"])
-        
-        # Try to use actual size if available
-        if self.winfo_width() > 1: w = self.winfo_width()
-        if self.winfo_height() > 1: h = self.winfo_height()
-
-        x1, y1 = 2, 2 + offset
-        x2, y2 = w - 2, h - 2 + offset
-        r = self.radius
-        
-        if r > h/2: r = h/2
-        
-        # Shadow
-        if offset == 0:
-            self.create_rounded_rect(x1+2, y1+4, x2+2, y2+4, r, fill=COLORS["shadow_light"], outline="")
-
-        # Body
-        self.create_rounded_rect(x1, y1, x2, y2, r, fill=self.bg_color, outline=self.bg_color)
-        
-        # Text
-        self.create_text(w//2, h//2 + offset, text=self.text_str, fill=self.text_color, font=FONTS[self.font_type])
-
+    
+    def draw(self, offset: int = 0):
+        """Compatibility method - no-op for CTkButton."""
+        pass
+    
     def configure(self, **kwargs):
-        if "text" in kwargs:
-            self.text_str = kwargs.pop("text")
+        """Configure button properties with backward compatibility."""
+        # Map old parameter names to CTk parameter names
         if "bg_color" in kwargs:
-            self.bg_color = kwargs.pop("bg_color")
-            self._original_bg = self.bg_color
-        if "hover_color" in kwargs:
-            self.hover_color = kwargs.pop("hover_color")
+            kwargs["fg_color"] = kwargs.pop("bg_color")
+            self.bg_color = kwargs["fg_color"]
+            self._original_bg = kwargs["fg_color"]
         if "text_color" in kwargs:
-            self.text_color = kwargs.pop("text_color")
-            
+            # CTkButton uses text_color directly
+            self.text_color = kwargs["text_color"]
+        if "text" in kwargs:
+            self.text_str = kwargs["text"]
+        
         super().configure(**kwargs)
-        self.draw()
 
-    def create_rounded_rect(self, x1, y1, x2, y2, r, **kwargs):
-        points = [x1+r, y1, x2-r, y1, x2, y1, x2, y1+r, x2, y2-r, x2, y2, x2-r, y2, x1+r, y2, x1, y2, x1, y2-r, x1, y1+r, x1, y1]
-        return self.create_polygon(points, smooth=True, **kwargs)
 
-    def _on_click(self, event):
-        if self.command:
-            self.command()
-        self.draw(offset=2)
-        self.after(100, lambda: self.draw(offset=0))
-
-    def _on_enter(self, event):
-        self.bg_color = self.hover_color
-        self.draw()
-
-    def _on_leave(self, event):
-        self.bg_color = self._original_bg
-        self.draw()
-
-class Card(tk.Canvas):
-    def __init__(self, parent, width=300, height=150, radius=20, bg_color=COLORS["surface"]):
-        super().__init__(parent, width=width, height=height, bg=COLORS["bg"], highlightthickness=0)
+class Card(ctk.CTkFrame):
+    """
+    A card container using CustomTkinter's CTkFrame.
+    
+    This is a drop-in replacement for the old Canvas-based Card.
+    """
+    
+    def __init__(
+        self,
+        parent,
+        width: int = 300,
+        height: int = 150,
+        radius: int = 20,
+        bg_color: str = COLORS["surface"],
+        text: str = "",
+        text_color: Optional[str] = None,
+        font: Optional[CTkFont] = None,
+        **kwargs
+    ):
+        """
+        Initialize a card.
+        
+        Args:
+            parent: Parent widget.
+            width: Card width.
+            height: Card height.
+            radius: Corner radius.
+            bg_color: Background color.
+            text: Optional text to display (for stat cards).
+            text_color: Text color.
+            font: Font for text.
+        """
+        super().__init__(
+            parent,
+            width=width,
+            height=height,
+            corner_radius=radius,
+            fg_color=bg_color,
+            **kwargs
+        )
+        
         self.radius = radius
         self.bg_color = bg_color
-        self.draw()
-
+        self.text = text
+        self.text_color = text_color or COLORS["text_primary"]
+        self.font = font
+        
+        # Add text label if text provided
+        if text:
+            self._text_label = ctk.CTkLabel(
+                self,
+                text=text,
+                text_color=self.text_color,
+                font=font,
+                fg_color="transparent"
+            )
+            self._text_label.place(relx=0.5, rely=0.5, anchor="center")
+    
     def draw(self):
-        self.delete("all")
-        w = int(self["width"])
-        h = int(self["height"])
-        r = self.radius
-        
-        # Soft Shadow
-        self.create_rounded_rect(4, 8, w-4, h-4, r, fill=COLORS["shadow_lighter"], outline="")
-        
-        # Card Body
-        self.create_rounded_rect(2, 2, w-6, h-6, r, fill=self.bg_color, outline=COLORS["shadow_lighter"])
+        """Compatibility method - no-op for CTkFrame."""
+        pass
 
-    def create_rounded_rect(self, x1, y1, x2, y2, r, **kwargs):
-        points = [x1+r, y1, x2-r, y1, x2, y1, x2, y1+r, x2, y2-r, x2, y2, x2-r, y2, x1+r, y2, x1, y2, x1, y2-r, x1, y1+r, x1, y1]
-        return self.create_polygon(points, smooth=True, **kwargs)
 
-class StyledEntry(tk.Frame):
-    def __init__(self, parent, placeholder="", width=200):
-        super().__init__(parent, bg=COLORS["surface"])
+class StyledEntry(ctk.CTkFrame):
+    """
+    A styled entry field with placeholder and error state support.
+    
+    This uses CTkEntry with additional error/success feedback.
+    """
+    
+    def __init__(
+        self,
+        parent,
+        placeholder: str = "",
+        width: int = 200,
+        height: int = 50,
+        **kwargs
+    ):
+        """
+        Initialize a styled entry.
+        
+        Args:
+            parent: Parent widget.
+            placeholder: Placeholder text.
+            width: Entry width.
+            height: Entry height.
+        """
+        super().__init__(parent, fg_color="transparent", **kwargs)
+        
         self.placeholder = placeholder
-        self.radius = 12  # Slightly rounded corners
-        
-        # Canvas for the input area (replacing Frame container)
-        self.canvas = tk.Canvas(self, bg=COLORS["surface"], height=50, highlightthickness=0)
-        self.canvas.pack(fill="x")
-        
-        # Entry widget
-        self.entry = tk.Entry(self.canvas, font=FONTS["input"], bg=COLORS["input_bg"], 
-                            fg=COLORS["text_primary"], relief="flat", highlightthickness=0,
-                            insertbackground=COLORS["text_primary"])  # Black cursor
-        
-        # Initial draw will happen on configure, but we need to create the window item once
-        self.entry_window = self.canvas.create_window(0, 0, window=self.entry, anchor="nw")
-        
-        self.entry.insert(0, placeholder)
-        self.entry.config(fg=COLORS["text_secondary"])
-        
-        self.entry.bind("<FocusIn>", self._on_focus_in)
-        self.entry.bind("<FocusOut>", self._on_focus_out)
-        self.entry.bind("<Return>", self._on_return)
-        self.entry.bind("<Key>", self._on_key_press)
-        
-        # Error label - always packed to reserve space, empty text when no error
-        self.error_label = tk.Label(self, text=" ", font=("Helvetica", 11), fg=COLORS["status_gadget"], 
-                                   bg=COLORS["surface"], anchor="w", wraplength=300, justify="left", height=1)
-        self.error_label.pack(fill="x", pady=(2, 0))
-        
         self.command = None
         self._has_feedback = False
-        self.current_border_color = COLORS["input_bg"] # Default invisible border
         
-        # Bind resize event
-        self.canvas.bind("<Configure>", self._draw)
-
-    def _draw(self, event=None):
-        w = self.canvas.winfo_width()
-        h = self.canvas.winfo_height()
+        # Main entry widget
+        self.entry = ctk.CTkEntry(
+            self,
+            placeholder_text=placeholder,
+            width=width,
+            height=height,
+            corner_radius=12,
+            fg_color=COLORS["input_bg"],
+            text_color=COLORS["text_primary"],
+            placeholder_text_color=COLORS["text_secondary"],
+            border_color=COLORS["input_bg"],
+            border_width=2,
+            font=get_ctk_font("input")
+        )
+        self.entry.pack(fill="x")
         
-        # Avoid drawing if too small
-        if w < 20: return
-            
-        self.canvas.delete("bg_rect")
+        # Error/success label
+        self.error_label = ctk.CTkLabel(
+            self,
+            text=" ",
+            text_color=COLORS["status_gadget"],
+            font=get_ctk_font("small"),
+            anchor="w",
+            height=20
+        )
+        self.error_label.pack(fill="x", pady=(2, 0))
         
-        # Draw rounded background
-        # Tag it 'bg_rect' so we can delete/update it
-        self.create_rounded_rect(2, 2, w-2, h-2, self.radius, fill=COLORS["input_bg"], outline=self.current_border_color, width=2, tags="bg_rect")
-        
-        # Ensure entry is on top
-        self.canvas.tag_lower("bg_rect")
-        
-        # Position entry
-        # Padding: x=15, y=10 (approximate centering)
-        entry_h = self.entry.winfo_reqheight()
-        entry_y = (h - entry_h) // 2
-        self.canvas.coords(self.entry_window, 15, entry_y)
-        self.canvas.itemconfigure(self.entry_window, width=w-30)
-
-    def create_rounded_rect(self, x1, y1, x2, y2, r, **kwargs):
-        points = [x1+r, y1, x2-r, y1, x2, y1, x2, y1+r, x2, y2-r, x2, y2, x2-r, y2, x1+r, y2, x1, y2, x1, y2-r, x1, y1+r, x1, y1]
-        return self.canvas.create_polygon(points, smooth=True, **kwargs)
-
-    def show_error(self, message):
-        self.error_label.config(text=message, fg=COLORS["status_gadget"])
-        self.current_border_color = COLORS["status_gadget"]
-        self._draw()
+        # Bind events
+        self.entry.bind("<Return>", self._on_return)
+        self.entry.bind("<Key>", self._on_key_press)
+        self.entry.bind("<FocusIn>", self._on_focus_in)
+        self.entry.bind("<FocusOut>", self._on_focus_out)
+    
+    def show_error(self, message: str):
+        """Show an error message with red border."""
+        self.error_label.configure(text=message, text_color=COLORS["status_gadget"])
+        self.entry.configure(border_color=COLORS["status_gadget"])
         self._has_feedback = True
-
-    def show_success(self, message):
-        self.error_label.config(text=message, fg=COLORS["button_start"])
-        self.current_border_color = COLORS["button_start"]
-        self._draw()
+    
+    def show_success(self, message: str):
+        """Show a success message with green border."""
+        self.error_label.configure(text=message, text_color=COLORS["success"])
+        self.entry.configure(border_color=COLORS["success"])
         self._has_feedback = True
-        
-    def show_info(self, message):
-        """Show info message without changing border color (for neutral status)."""
-        self.error_label.config(text=message, fg=COLORS["text_secondary"])
-        # Don't change border color for info messages - keep current state
+    
+    def show_info(self, message: str):
+        """Show info message without changing border color."""
+        self.error_label.configure(text=message, text_color=COLORS["text_secondary"])
         self._has_feedback = True
-
+    
     def clear_error(self):
-        self.error_label.config(text=" ")  # Keep space reserved
-        # If focused, show accent border, else default
-        if self.entry.focus_get() == self.entry:
-            self.current_border_color = COLORS["accent"]
-        else:
-            self.current_border_color = COLORS["input_bg"]
-        self._draw()
+        """Clear error state."""
+        self.error_label.configure(text=" ")
+        self.entry.configure(border_color=COLORS["accent"] if self.entry == self.focus_get() else COLORS["input_bg"])
         self._has_feedback = False
-
+    
     def _on_focus_in(self, event):
-        # Don't clear error on focus in, wait for typing
-        if self.entry.get() == self.placeholder:
-            self.entry.delete(0, "end")
-            self.entry.config(fg=COLORS["text_primary"])
-        self.current_border_color = COLORS["accent"]
-        self._draw()
-        
-    def _on_key_press(self, event):
-        self.clear_error()
-
+        """Handle focus in."""
+        self.entry.configure(border_color=COLORS["accent"])
+    
     def _on_focus_out(self, event):
-        if not self.entry.get():
-            self.entry.insert(0, self.placeholder)
-            self.entry.config(fg=COLORS["text_secondary"])
-        # Only reset border if no feedback is showing
+        """Handle focus out."""
         if not self._has_feedback:
-            self.current_border_color = COLORS["input_bg"]
-            self._draw()
-        
+            self.entry.configure(border_color=COLORS["input_bg"])
+    
+    def _on_key_press(self, event):
+        """Handle key press - clear error."""
+        self.clear_error()
+    
     def _on_return(self, event):
+        """Handle return key."""
         if self.command:
             self.command()
-
-    def get(self):
-        val = self.entry.get()
-        return "" if val == self.placeholder else val
-        
-    def bind_return(self, command):
+    
+    def get(self) -> str:
+        """Get the entry value."""
+        return self.entry.get()
+    
+    def bind_return(self, command: Callable):
+        """Bind a command to the return key."""
         self.command = command
-        
+    
     def delete(self, first, last=None):
+        """Delete text from entry."""
         self.entry.delete(first, last)
-        
-    def insert(self, index, string):
+    
+    def insert(self, index, string: str):
+        """Insert text into entry."""
         self.entry.insert(index, string)
+    
+    def focus_set(self):
+        """Set focus to the entry."""
+        self.entry.focus_set()
+
+
+# Backward compatibility aliases
+normalize_tk_scaling = lambda root: None  # No-op, CTk handles this

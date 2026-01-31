@@ -119,10 +119,71 @@ User data stored in:
 
 The build process uses PyInstaller. API keys are embedded via `bundled_keys.py` (generated at build time from `bundled_keys_template.py`).
 
+### Building macOS DMG (Step-by-Step for Agents)
+
+**Prerequisites:**
+- macOS (Darwin) system
+- Python 3.9+
+- Homebrew with `create-dmg` installed (`brew install create-dmg`)
+- Developer ID certificate for signing (optional but recommended)
+
+**Required Environment Variables:**
+All keys are in the `.env` file. The build script needs them as environment variables:
+- `GEMINI_API_KEY` (required - primary vision provider)
+- `OPENAI_API_KEY` (optional - fallback)
+- `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_PRICE_ID` (for payments)
+
+**Build Commands:**
+
 ```bash
-# macOS: Creates signed .app and .dmg
+# Step 1: Create fresh build venv with PUBLIC PyPI
+# IMPORTANT: The default pip may try to use internal Artifactory which fails
+cd <project-root>  # e.g., /Users/you/Development/BrainDock
+rm -rf .venv-build
+python3 -m venv .venv-build
+source .venv-build/bin/activate
+pip config set global.index-url https://pypi.org/simple/
+pip install --upgrade pip
+pip install -r requirements.txt pyinstaller --quiet
+
+# Step 2: Export keys from .env and run build
+# NOTE: Don't use `source .env` - it fails on lines with spaces
+export OPENAI_API_KEY="<from .env>"
+export GEMINI_API_KEY="<from .env>"
+export STRIPE_SECRET_KEY="<from .env>"
+export STRIPE_PUBLISHABLE_KEY="<from .env>"
+export STRIPE_PRICE_ID="<from .env>"
 ./build/build_macos.sh
 
-# The spec file handles platform-specific bundling
-pyinstaller build/braindock.spec
+# Step 3: Copy to Downloads for testing
+cp dist/BrainDock-1.0.0-macOS.dmg ~/Downloads/
 ```
+
+**Common Issues:**
+
+1. **pip connection errors to Artifactory**: Run `pip config set global.index-url https://pypi.org/simple/` to force public PyPI
+
+2. **"Resource busy" during DMG creation**: A previous DMG is still mounted. Fix:
+   ```bash
+   hdiutil info | grep -E "image-path|/dev/disk"  # Find mounted disk
+   hdiutil detach /dev/diskN -force               # Eject it
+   rm -f dist/rw.*.dmg dist/*.dmg                 # Clean up temp files
+   ```
+
+3. **`source .env` fails**: The `.env` file has lines with spaces (e.g., `PRODUCT_PRICE_DISPLAY=AUD 1.99...`). Export keys individually instead.
+
+4. **Signing warnings**: Without `APPLE_ID` and `APPLE_APP_SPECIFIC_PASSWORD`, the app is signed but not notarized. Users may need to right-click → Open to bypass Gatekeeper.
+
+**Build Output:**
+- App bundle: `dist/BrainDock.app`
+- DMG installer: `dist/BrainDock-1.0.0-macOS.dmg` (~99 MB)
+
+**Cleanup:** The build script auto-removes `bundled_keys.py` after building. If it doesn't, delete it manually (contains secrets).
+
+### Quick Local Build (No Keys Embedded)
+
+For quick testing where the app reads from `.env` at runtime:
+```bash
+./build/build_local.sh
+```
+This creates an unsigned DMG in `~/Downloads/` but requires `.env` to be present at runtime.

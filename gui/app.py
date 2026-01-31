@@ -1,12 +1,15 @@
 """
-BrainDock - Desktop GUI Application
+BrainDock - Desktop GUI Application (CustomTkinter Edition)
 
-A minimal tkinter GUI that wraps the existing detection code,
-providing a user-friendly interface for focus session tracking.
+A CustomTkinter GUI that wraps the existing detection code,
+providing a user-friendly interface for focus session tracking
+with consistent cross-platform appearance.
 """
 
 import tkinter as tk
 from tkinter import messagebox, font as tkfont
+import customtkinter as ctk
+from customtkinter import CTkFont
 import threading
 import time
 import logging
@@ -26,6 +29,9 @@ except ImportError:
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Import font loader for bundled fonts
+from gui.font_loader import load_bundled_fonts, get_font_sans, get_font_serif
 
 import config
 from camera.capture import CameraCapture
@@ -126,6 +132,73 @@ def open_macos_accessibility_settings():
                 subprocess.run(["open", "-a", "System Settings"], check=True)
             except Exception:
                 subprocess.run(["open", "-a", "System Preferences"], check=True)
+
+
+# --- Windows Camera Permission Check ---
+def check_windows_camera_permission() -> str:
+    """
+    Check Windows camera permission status.
+    
+    On Windows 10/11, camera access can be disabled in Settings > Privacy > Camera.
+    This function attempts a quick camera test with timeout to determine if
+    camera access is available.
+    
+    Returns:
+        One of: "authorized", "denied", "unknown"
+    """
+    if sys.platform != "win32":
+        return "authorized"  # Non-Windows: let normal flow handle
+    
+    try:
+        import cv2
+        
+        # Try to open camera with a short timeout
+        # If camera privacy is disabled, VideoCapture may succeed but read() fails
+        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)  # Use DirectShow backend for faster init
+        
+        if not cap.isOpened():
+            cap.release()
+            logger.debug("Windows camera check: VideoCapture failed to open")
+            return "denied"
+        
+        # Try to read a frame with timeout
+        # Set a very short timeout for the test
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        
+        # Attempt to read - this is where permission denial typically manifests
+        ret, frame = cap.read()
+        cap.release()
+        
+        if ret and frame is not None:
+            logger.debug("Windows camera check: Camera access authorized")
+            return "authorized"
+        else:
+            logger.debug("Windows camera check: Could not read frame - likely permission denied")
+            return "denied"
+            
+    except Exception as e:
+        logger.debug(f"Windows camera check error: {e}")
+        return "unknown"
+
+
+def open_windows_camera_settings():
+    """Open Windows Settings to Privacy & Security > Camera."""
+    if sys.platform == "win32":
+        try:
+            # Windows 10/11 Settings URI scheme for camera privacy
+            subprocess.run(
+                ["cmd", "/c", "start", "ms-settings:privacy-webcam"],
+                check=True,
+                shell=False
+            )
+            logger.info("Opened Windows Camera privacy settings")
+        except Exception as e:
+            logger.error(f"Failed to open Windows Settings: {e}")
+            # Fallback: try alternative method
+            try:
+                os.startfile("ms-settings:privacy-webcam")
+            except Exception as fallback_error:
+                logger.error(f"Fallback also failed: {fallback_error}")
 
 
 def check_macos_accessibility_permission() -> bool:
@@ -467,10 +540,10 @@ def _get_available_fonts():
 
 def get_system_font(size: int = 11, weight: str = "normal") -> tuple:
     """
-    Get the best available system font with fallback.
+    Get the best available font for UI text.
     
-    Primary font is SF Pro Display (macOS). Falls back to similar-looking
-    sans-serif fonts on other platforms (Segoe UI on Windows, then Helvetica).
+    Uses bundled Inter font for consistent cross-platform appearance.
+    Falls back to system fonts if bundled fonts aren't available.
     
     Args:
         size: Font size in points
@@ -479,25 +552,9 @@ def get_system_font(size: int = 11, weight: str = "normal") -> tuple:
     Returns:
         Tuple of (font_family, size, weight) suitable for tkinter
     """
-    # Font priority order - SF Pro Display and similar modern sans-serif fonts
-    font_priority = [
-        "SF Pro Display",      # macOS primary
-        "SF Pro Text",         # macOS alternative
-        ".SF NS Text",         # macOS system font variant
-        "Segoe UI",            # Windows primary (very similar to SF Pro)
-        "Helvetica Neue",      # Cross-platform, similar style
-        "Helvetica",           # Universal fallback
-        "Arial",               # Ultimate fallback (available everywhere)
-    ]
-    
-    available = _get_available_fonts()
-    
-    for font_name in font_priority:
-        if font_name.lower() in available:
-            return (font_name, size, weight)
-    
-    # If nothing found, return Helvetica (tkinter default)
-    return ("Helvetica", size, weight)
+    # Use bundled Inter font (loaded at startup)
+    font_family = get_font_sans()  # Inter if loaded, Helvetica as fallback
+    return (font_family, size, weight)
 
 
 class RoundedButton(tk.Canvas):
@@ -571,7 +628,7 @@ class RoundedButton(tk.Canvas):
 
         self.create_rounded_rect(x1, y1, x2, y2, r, fill=self.bg_color, outline=self.bg_color)
 
-        font_to_use = self.font_obj or ("Helvetica", 14, "bold")
+        font_to_use = self.font_obj or (get_font_sans(), 14, "bold")
         self.create_text(w // 2, h // 2 + offset, text=self.text_str, fill=self.text_color, font=font_to_use)
 
     def create_rounded_rect(self, x1, y1, x2, y2, r, **kwargs):
@@ -733,10 +790,14 @@ class IconButton(tk.Canvas):
         try:
             if not os.path.exists(self.image_path):
                 return False
+            
+            # Ensure minimum button size to prevent PIL errors
+            if btn_size < 10:
+                return False
                 
             # Load original image if not already loaded or if size changed significantly
             # We reload to ensure high quality scaling
-            icon_size = int(btn_size * 0.6)  # Image takes 60% of button
+            icon_size = max(1, int(btn_size * 0.6))  # Image takes 60% of button, min 1px
             
             img = Image.open(self.image_path)
             img = img.resize((icon_size, icon_size), Image.Resampling.LANCZOS)
@@ -871,13 +932,17 @@ class IconButton(tk.Canvas):
             self.draw(pressed=True)
             self.update_idletasks()
             self.command()
-            if self.winfo_exists():
+            # Reset hover state after command (popup may have stolen focus)
+            if self.winfo_exists() and hasattr(self, "_original_bg"):
+                self.bg_color = self._original_bg
                 self.after(100, lambda: self.draw(pressed=False) if self.winfo_exists() else None)
     
     def _on_enter(self, event):
         """Apply hover effect."""
         if self._enabled:
-            self._original_bg = self.bg_color
+            # Only save original if not already in hover state
+            if not hasattr(self, "_original_bg") or self.bg_color != self.hover_color:
+                self._original_bg = self.bg_color
             self.bg_color = self.hover_color
             self.draw()
     
@@ -943,7 +1008,7 @@ class Card(tk.Canvas):
         self.tag_lower("card_bg")
         
         if self.text:
-            font_to_use = self.font or ("Helvetica", 12, "bold")
+            font_to_use = self.font or (get_font_sans(), 12, "bold")
             fill_color = self.text_color or COLORS["text_primary"]
             self.create_text(w // 2, h // 2, text=self.text, fill=fill_color, font=font_to_use, tags="card_text")
 
@@ -1004,7 +1069,7 @@ class Badge(tk.Canvas):
         self.create_rounded_rect(3, 4, w - 1, h - 1, self.corner_radius, fill="#D8D8DC", outline="")
         # Main badge surface
         self.create_rounded_rect(0, 0, w - 4, h - 5, self.corner_radius, fill=self.bg_color, outline="")
-        font_to_use = self.font or ("Helvetica", 12, "bold")
+        font_to_use = self.font or (get_font_sans(), 12, "bold")
         self.create_text((w - 4) // 2, (h - 5) // 2, text=self.text, fill=self.text_color, font=font_to_use)
 
     def create_rounded_rect(self, x1, y1, x2, y2, r, **kwargs):
@@ -1137,9 +1202,15 @@ class NotificationPopup:
     # Class-level reference to track active popup (only one at a time)
     _active_popup: Optional['NotificationPopup'] = None
     
-    # Consistent font family for the app (Seraphic theme)
-    FONT_FAMILY = "Georgia"
-    FONT_FAMILY_FALLBACK = "Times New Roman"
+    # Consistent font family for the app (using bundled fonts)
+    # These are set dynamically to use bundled fonts
+    @staticmethod
+    def _get_font_family():
+        return get_font_serif()
+    
+    @staticmethod
+    def _get_font_family_fallback():
+        return get_font_sans()
     
     def __init__(
         self, 
@@ -1233,7 +1304,7 @@ class NotificationPopup:
     
     def _get_font(self, size: int, weight: str = "normal") -> tuple:
         """Get font tuple with fallback."""
-        return (self.FONT_FAMILY, size, weight)
+        return (self._get_font_family(), size, weight)
     
     def _create_ui(self):
         """Build the popup UI matching the reference design."""
@@ -1532,13 +1603,33 @@ class BrainDockGUI:
     - Status indicator (Focused / Away / On another gadget)
     - Session timer
     - Auto-generates PDF report on session stop
+    
+    Uses CustomTkinter for consistent cross-platform appearance.
     """
     
     def __init__(self):
         """Initialize the GUI application."""
-        self.root = tk.Tk()
+        # Load bundled fonts before creating any UI
+        load_bundled_fonts()
+        
+        # Platform-specific DPI handling
+        # macOS and Windows handle DPI scaling differently
+        if sys.platform == "darwin":
+            # macOS: Disable automatic DPI scaling to match original Tkinter behavior
+            # This prevents fonts from appearing larger on Retina displays
+            ctk.deactivate_automatic_dpi_awareness()
+            ctk.set_widget_scaling(1.0)
+            ctk.set_window_scaling(1.0)
+        # Windows: Let CustomTkinter handle DPI automatically (no deactivation needed)
+        # This ensures proper scaling on high-DPI Windows displays
+        
+        # Set CustomTkinter appearance mode (light theme)
+        ctk.set_appearance_mode("light")
+        
+        # Create CustomTkinter root window
+        self.root = ctk.CTk()
         self.root.title("")  # Empty title - no text in title bar
-        self.root.configure(bg=COLORS["bg_primary"])
+        self.root.configure(fg_color=COLORS["bg_primary"])
         
         # Set light appearance on macOS (makes title bar white instead of dark)
         if sys.platform == "darwin":
@@ -1556,9 +1647,10 @@ class BrainDockGUI:
         self.root.resizable(True, True)
         self.root.minsize(MIN_WIDTH, MIN_HEIGHT)
         
-        # Calculate and set initial scale based on actual window dimensions
-        self.current_scale = self.scaling_manager.calculate_scale(initial_width, initial_height)
-        self.scaling_manager.set_scale(self.current_scale)  # Sync scaling manager's internal scale
+        # Start with scale=1.0 for consistent font sizes on first startup
+        # Dynamic scaling kicks in only when user manually resizes the window
+        self.current_scale = 1.0
+        self.scaling_manager.set_scale(1.0)
         self._last_width = initial_width
         self._last_height = initial_height
         
@@ -1664,15 +1756,18 @@ class BrainDockGUI:
         """
         Create custom fonts for the UI with scalable sizes.
         
+        Uses bundled fonts (Inter for interface, Lora for display) for
+        consistent cross-platform appearance.
+        
         Args:
             scale: Optional scale factor. If None, uses current_scale.
         """
         if scale is None:
             scale = self.current_scale
         
-        # Seraphic Design Fonts
-        font_display = "Georgia"
-        font_interface = "Helvetica"
+        # Use bundled fonts for consistent cross-platform rendering
+        font_display = get_font_serif()   # Lora (replaces Georgia)
+        font_interface = get_font_sans()  # Inter (replaces Helvetica)
         
         # Helper to get scaled font size with bounds
         def get_scaled_size(font_key: str) -> int:
@@ -1928,7 +2023,7 @@ class BrainDockGUI:
         # --- Split Layout ---
         # Left Panel: Stats (Hidden during session)
         self.stats_container = tk.Frame(self.content_frame, bg=COLORS["bg_primary"])
-        self.stats_container.pack(side=tk.LEFT, padx=(0, 40), anchor="n")
+        self.stats_container.pack(side=tk.LEFT, padx=(0, 20), anchor="n")
         
         # Right Panel: Controls (Always visible, centers when stats hidden)
         self.controls_container = tk.Frame(self.content_frame, bg=COLORS["bg_primary"])
@@ -2060,8 +2155,8 @@ class BrainDockGUI:
     def _create_stat_card(self, parent, col, card_type):
         """Create a minimal stat card with just title and value."""
         wrapper = tk.Frame(parent, bg=COLORS["bg_primary"])
-        # Use pack for vertical stacking in stats_container
-        wrapper.pack(pady=self.scaling_manager.scale_padding(5))
+        # Use pack for vertical stacking in stats_container (reduced padding for tighter layout)
+        wrapper.pack(pady=2)
         
         # Compact card dimensions - scale based on current scale
         card_width = max(UI_STAT_CARD_MIN_WIDTH, int(UI_STAT_CARD_WIDTH * self.current_scale))
@@ -2419,10 +2514,10 @@ class BrainDockGUI:
         Allows users to enable/disable quick block sites and add custom patterns.
         Uses scrolling for content with fixed buttons at the bottom.
         """
-        # Create settings window - scale based on current main window size
-        settings_window = tk.Toplevel(self.root)
+        # Create settings window using CTkToplevel for proper CustomTkinter integration
+        settings_window = ctk.CTkToplevel(self.root)
         settings_window.title("Screen Settings")
-        settings_window.configure(bg=COLORS["bg_primary"])
+        settings_window.configure(fg_color=COLORS["bg_primary"])
         
         # Scale popup size based on the main window's current size
         # Use 85% of main window dimensions, with reasonable min/max bounds
@@ -2445,64 +2540,118 @@ class BrainDockGUI:
         settings_window.geometry(f"+{x}+{y}")
         
         # Main container - holds scrollable area and fixed buttons
-        main_container = tk.Frame(settings_window, bg=COLORS["bg_primary"])
+        main_container = ctk.CTkFrame(settings_window, fg_color=COLORS["bg_primary"])
         main_container.pack(fill=tk.BOTH, expand=True)
         
-        # --- Scrollable content area ---
-        # Create canvas with scrollbar for the content
-        canvas_frame = tk.Frame(main_container, bg=COLORS["bg_primary"])
-        canvas_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(20, 0))
-        
-        canvas = tk.Canvas(canvas_frame, bg=COLORS["bg_primary"], highlightthickness=0)
-        scrollbar = tk.Scrollbar(canvas_frame, orient="vertical", command=canvas.yview)
-        
-        # Scrollable frame inside canvas
-        scrollable_frame = tk.Frame(canvas, bg=COLORS["bg_primary"])
-        
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        # --- Scrollable content area using CTkScrollableFrame ---
+        # CTkScrollableFrame handles mousewheel/trackpad scrolling automatically
+        scrollable_frame = ctk.CTkScrollableFrame(
+            main_container,
+            fg_color=COLORS["bg_primary"],
+            scrollbar_button_color=COLORS["text_secondary"],
+            scrollbar_button_hover_color=COLORS["accent_primary"]
         )
+        scrollable_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(20, 0))
         
-        canvas_window = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
+        # Tk 9 fix: Bind <TouchpadScroll> event for macOS trackpad scrolling
+        # Industry-standard scrolling: pure direct tracking + momentum on release
+        import time as time_module
         
-        # Make scrollable frame expand to canvas width
-        def configure_canvas_width(event):
-            canvas.itemconfig(canvas_window, width=event.width)
-        canvas.bind("<Configure>", configure_canvas_width)
+        # Momentum constants
+        MIN_VELOCITY = 0.0003
+        FRICTION = 0.95
         
-        # Enable smooth mousewheel scrolling (same approach as tutorial popup)
-        def _on_mousewheel(event):
-            if sys.platform == "darwin":
-                # macOS: delta is typically small integers, scroll proportionally
-                # Negative delta = scroll down, positive = scroll up
-                scroll_amount = -event.delta * 0.01  # Small fraction for smooth scroll
-            else:
-                # Windows/Linux: delta is typically 120 per notch
-                scroll_amount = -event.delta / 120 * 0.05  # Smooth scroll factor
+        scroll_state = {
+            "velocity": 0.0,
+            "last_time": 0,
+            "last_scroll_amount": 0,
+            "animating": False
+        }
+        
+        def _apply_inertia():
+            """Momentum animation after finger lifts."""
+            if abs(scroll_state["velocity"]) < MIN_VELOCITY:
+                scroll_state["velocity"] = 0.0
+                scroll_state["animating"] = False
+                return
             
-            # Get current position and adjust
-            current_pos = canvas.yview()[0]
-            new_pos = max(0, min(1, current_pos + scroll_amount))
-            canvas.yview_moveto(new_pos)
+            # Stop if new input
+            if time_module.time() - scroll_state["last_time"] < 0.04:
+                scroll_state["animating"] = False
+                return
+            
+            try:
+                canvas = scrollable_frame._parent_canvas
+                current = canvas.yview()
+                visible = current[1] - current[0]
+                
+                # Bounds check
+                if (scroll_state["velocity"] > 0 and current[1] >= 1.0) or \
+                   (scroll_state["velocity"] < 0 and current[0] <= 0.0):
+                    scroll_state["velocity"] = 0.0
+                    scroll_state["animating"] = False
+                    return
+                
+                new_pos = current[0] + scroll_state["velocity"]
+                new_pos = max(0.0, min(1.0 - visible, new_pos))
+                canvas.yview_moveto(new_pos)
+                
+                scroll_state["velocity"] *= FRICTION
+                settings_window.after(16, _apply_inertia)
+            except:
+                scroll_state["animating"] = False
         
-        # Bind mousewheel to canvas and scrollable frame
-        canvas.bind("<MouseWheel>", _on_mousewheel)
-        scrollable_frame.bind("<MouseWheel>", _on_mousewheel)
+        def _start_inertia():
+            """Start momentum if finger lifted."""
+            if time_module.time() - scroll_state["last_time"] > 0.04:
+                if abs(scroll_state["velocity"]) >= MIN_VELOCITY and not scroll_state["animating"]:
+                    scroll_state["animating"] = True
+                    _apply_inertia()
         
-        # Helper to bind mousewheel to all child widgets
-        def _bind_mousewheel_to_children(widget):
-            widget.bind("<MouseWheel>", _on_mousewheel)
-            for child in widget.winfo_children():
-                _bind_mousewheel_to_children(child)
+        def _on_touchpad_scroll(event):
+            """Pure direct tracking - content follows finger exactly."""
+            try:
+                delta_y = event.delta & 0xFFFF
+                if delta_y > 32767:
+                    delta_y -= 65536
+                
+                if abs(delta_y) < 1:
+                    return
+                
+                current_time = time_module.time()
+                time_delta = current_time - scroll_state["last_time"]
+                
+                scroll_state["animating"] = False
+                
+                canvas = scrollable_frame._parent_canvas
+                current = canvas.yview()
+                visible = current[1] - current[0]
+                
+                # Pure 1:1 tracking - no smoothing, no lag
+                scroll_amount = -delta_y * 0.0004
+                
+                new_pos = current[0] + scroll_amount
+                new_pos = max(0.0, min(1.0 - visible, new_pos))
+                canvas.yview_moveto(new_pos)
+                
+                # Velocity = recent scroll amounts (for momentum after release)
+                # Use simple average of last two for smoothness
+                if time_delta > 0 and time_delta < 0.15:
+                    scroll_state["velocity"] = (scroll_state["last_scroll_amount"] + scroll_amount) / 2
+                else:
+                    scroll_state["velocity"] = scroll_amount
+                
+                scroll_state["last_scroll_amount"] = scroll_amount
+                scroll_state["last_time"] = current_time
+                
+                settings_window.after(60, _start_inertia)
+            except:
+                pass
         
-        # Pack canvas and scrollbar
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        settings_window.bind_all("<TouchpadScroll>", _on_touchpad_scroll)
         
         # --- Content inside scrollable frame ---
-        content_padding = tk.Frame(scrollable_frame, bg=COLORS["bg_primary"])
+        content_padding = ctk.CTkFrame(scrollable_frame, fg_color=COLORS["bg_primary"])
         content_padding.pack(fill=tk.BOTH, expand=True, padx=20)
         
         # Title
@@ -2528,7 +2677,7 @@ class BrainDockGUI:
         quick_sites_label = tk.Label(
             content_padding,
             text="Quick Select",
-            font=("Helvetica", 16, "bold"),
+            font=(get_font_sans(), 16, "bold"),
             fg=COLORS["text_primary"],
             bg=COLORS["bg_primary"]
         )
@@ -2566,7 +2715,7 @@ class BrainDockGUI:
                 quick_sites_frame,
                 text=site_data["name"],
                 variable=var,
-                font=("Helvetica", 14),
+                font=(get_font_sans(), 14),
                 fg=COLORS["text_primary"],
                 bg=COLORS["bg_primary"],
                 selectcolor=COLORS["bg_secondary"],
@@ -2580,7 +2729,7 @@ class BrainDockGUI:
         urls_label = tk.Label(
             content_padding,
             text="Custom URLs/Domains",
-            font=("Helvetica", 16, "bold"),
+            font=(get_font_sans(), 16, "bold"),
             fg=COLORS["text_primary"],
             bg=COLORS["bg_primary"]
         )
@@ -2632,7 +2781,7 @@ class BrainDockGUI:
         apps_label = tk.Label(
             content_padding,
             text="Custom App Names",
-            font=("Helvetica", 16, "bold"),
+            font=(get_font_sans(), 16, "bold"),
             fg=COLORS["text_primary"],
             bg=COLORS["bg_primary"]
         )
@@ -2736,7 +2885,7 @@ class BrainDockGUI:
         cancel_btn = RoundedButton(
             button_container,
             text="Cancel",
-            command=settings_window.destroy,
+            command=settings_window.destroy,  # <Destroy> event will cleanup scroll bindings
             bg_color=COLORS["button_pause"],
             hover_color=COLORS["button_pause_hover"],
             fg_color=COLORS["text_white"],
@@ -2746,12 +2895,6 @@ class BrainDockGUI:
             height=48
         )
         cancel_btn.pack(side=tk.LEFT)
-        
-        # Bind mousewheel to all children in scrollable area
-        _bind_mousewheel_to_children(scrollable_frame)
-        
-        # Window close handler
-        settings_window.protocol("WM_DELETE_WINDOW", settings_window.destroy)
     
     def _toggle_category(self, category_id: str, enabled: bool):
         """
@@ -3822,10 +3965,10 @@ class BrainDockGUI:
         - Pause/Resume
         - Reports
         """
-        # Create tutorial window - scale based on screen size
-        tutorial_window = tk.Toplevel(self.root)
+        # Create tutorial window using CTkToplevel for proper CustomTkinter integration
+        tutorial_window = ctk.CTkToplevel(self.root)
         tutorial_window.title("How to Use BrainDock")
-        tutorial_window.configure(bg=COLORS["bg_primary"])
+        tutorial_window.configure(fg_color=COLORS["bg_primary"])
         
         # Calculate scaled popup size with minimum height to ensure buttons visible
         window_width, window_height = self.scaling_manager.get_popup_size(
@@ -3843,86 +3986,144 @@ class BrainDockGUI:
         tutorial_window.geometry(f"+{x}+{y}")
         
         # Main container with padding
-        main_container = tk.Frame(tutorial_window, bg=COLORS["bg_primary"])
+        main_container = ctk.CTkFrame(tutorial_window, fg_color=COLORS["bg_primary"])
         main_container.pack(fill=tk.BOTH, expand=True, padx=30, pady=25)
         
-        # Header
+        # Header frame - groups title and subtitle together for consistent alignment
+        header_frame = tk.Frame(main_container, bg=COLORS["bg_primary"])
+        header_frame.pack(fill=tk.X, pady=(0, 25))
+        
+        # Title and subtitle centered within the same frame
         title = tk.Label(
-            main_container,
+            header_frame,
             text="How to Use BrainDock",
             font=self.font_title,
             fg=COLORS["accent_primary"],
-            bg=COLORS["bg_primary"]
+            bg=COLORS["bg_primary"],
+            anchor="center"
         )
-        title.pack()
+        title.pack(fill=tk.X)
         
         subtitle = tk.Label(
-            main_container,
+            header_frame,
             text="Your AI-powered focus companion",
             font=self.font_body,
             fg=COLORS["text_secondary"],
-            bg=COLORS["bg_primary"]
-        )
-        subtitle.pack(pady=(8, 25))
-        
-        # Scrollable content area
-        canvas_frame = tk.Frame(main_container, bg=COLORS["bg_primary"])
-        canvas_frame.pack(fill=tk.BOTH, expand=True)
-        
-        content_width = 600
-        canvas = tk.Canvas(
-            canvas_frame,
             bg=COLORS["bg_primary"],
-            highlightthickness=0,
-            width=content_width
+            anchor="center"
         )
-        scrollbar = tk.Scrollbar(canvas_frame, orient="vertical", command=canvas.yview)
-        scrollable_frame = tk.Frame(canvas, bg=COLORS["bg_primary"])
+        subtitle.pack(fill=tk.X, pady=(8, 0))
         
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        # --- Scrollable content area using CTkScrollableFrame ---
+        # CTkScrollableFrame handles mousewheel/trackpad scrolling automatically
+        scrollable_frame = ctk.CTkScrollableFrame(
+            main_container,
+            fg_color=COLORS["bg_primary"],
+            scrollbar_button_color=COLORS["text_secondary"],
+            scrollbar_button_hover_color=COLORS["accent_primary"]
         )
+        scrollable_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 10))
         
-        canvas_window = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw", width=content_width)
-        canvas.configure(yscrollcommand=scrollbar.set)
+        # Content wrapper inside scrollable frame (matches settings pattern)
+        content_frame = ctk.CTkFrame(scrollable_frame, fg_color=COLORS["bg_primary"])
+        content_frame.pack(fill=tk.BOTH, expand=True, padx=10)
         
-        # Enable smooth mousewheel scrolling (pixel-based, not unit-based)
-        def _on_mousewheel(event):
-            # Get current scroll position and total scrollable height
-            # Use yview to scroll by a small fraction for smooth scrolling
-            if sys.platform == "darwin":
-                # macOS: delta is typically small integers, scroll proportionally
-                # Negative delta = scroll down, positive = scroll up
-                scroll_amount = -event.delta * 0.01  # Small fraction for smooth scroll
-            else:
-                # Windows/Linux: delta is typically 120 per notch
-                scroll_amount = -event.delta / 120 * 0.05  # Smooth scroll factor
+        # Tk 9 fix: Bind <TouchpadScroll> event for macOS trackpad scrolling
+        # Industry-standard scrolling: pure direct tracking + momentum on release
+        import time as time_module
+        
+        # Momentum constants
+        MIN_VELOCITY = 0.0003
+        FRICTION = 0.95
+        
+        scroll_state = {
+            "velocity": 0.0,
+            "last_time": 0,
+            "last_scroll_amount": 0,
+            "animating": False
+        }
+        
+        def _apply_inertia():
+            """Momentum animation after finger lifts."""
+            if abs(scroll_state["velocity"]) < MIN_VELOCITY:
+                scroll_state["velocity"] = 0.0
+                scroll_state["animating"] = False
+                return
             
-            # Get current position and adjust
-            current_pos = canvas.yview()[0]
-            new_pos = current_pos + scroll_amount
-            # Clamp to valid range [0, 1]
-            new_pos = max(0, min(1, new_pos))
-            canvas.yview_moveto(new_pos)
+            # Stop if new input
+            if time_module.time() - scroll_state["last_time"] < 0.04:
+                scroll_state["animating"] = False
+                return
+            
+            try:
+                canvas = scrollable_frame._parent_canvas
+                current = canvas.yview()
+                visible = current[1] - current[0]
+                
+                # Bounds check
+                if (scroll_state["velocity"] > 0 and current[1] >= 1.0) or \
+                   (scroll_state["velocity"] < 0 and current[0] <= 0.0):
+                    scroll_state["velocity"] = 0.0
+                    scroll_state["animating"] = False
+                    return
+                
+                new_pos = current[0] + scroll_state["velocity"]
+                new_pos = max(0.0, min(1.0 - visible, new_pos))
+                canvas.yview_moveto(new_pos)
+                
+                scroll_state["velocity"] *= FRICTION
+                tutorial_window.after(16, _apply_inertia)
+            except:
+                scroll_state["animating"] = False
         
-        # Bind to canvas and scrollable frame directly (not bind_all)
-        canvas.bind("<MouseWheel>", _on_mousewheel)
-        scrollable_frame.bind("<MouseWheel>", _on_mousewheel)
+        def _start_inertia():
+            """Start momentum if finger lifted."""
+            if time_module.time() - scroll_state["last_time"] > 0.04:
+                if abs(scroll_state["velocity"]) >= MIN_VELOCITY and not scroll_state["animating"]:
+                    scroll_state["animating"] = True
+                    _apply_inertia()
         
-        # Bind to all children as they're created
-        def _bind_mousewheel_to_widget(widget):
-            widget.bind("<MouseWheel>", _on_mousewheel)
-            for child in widget.winfo_children():
-                _bind_mousewheel_to_widget(child)
+        def _on_touchpad_scroll(event):
+            """Pure direct tracking - content follows finger exactly."""
+            try:
+                delta_y = event.delta & 0xFFFF
+                if delta_y > 32767:
+                    delta_y -= 65536
+                
+                if abs(delta_y) < 1:
+                    return
+                
+                current_time = time_module.time()
+                time_delta = current_time - scroll_state["last_time"]
+                
+                scroll_state["animating"] = False
+                
+                canvas = scrollable_frame._parent_canvas
+                current = canvas.yview()
+                visible = current[1] - current[0]
+                
+                # Pure 1:1 tracking - no smoothing, no lag
+                scroll_amount = -delta_y * 0.0004
+                
+                new_pos = current[0] + scroll_amount
+                new_pos = max(0.0, min(1.0 - visible, new_pos))
+                canvas.yview_moveto(new_pos)
+                
+                # Velocity = recent scroll amounts (for momentum after release)
+                # Use simple average of last two for smoothness
+                if time_delta > 0 and time_delta < 0.15:
+                    scroll_state["velocity"] = (scroll_state["last_scroll_amount"] + scroll_amount) / 2
+                else:
+                    scroll_state["velocity"] = scroll_amount
+                
+                scroll_state["last_scroll_amount"] = scroll_amount
+                scroll_state["last_time"] = current_time
+                
+                tutorial_window.after(60, _start_inertia)
+            except:
+                pass
         
-        # Store the bind function for later use after content is created
-        self._tutorial_bind_mousewheel = _bind_mousewheel_to_widget
-        self._tutorial_canvas = canvas
-        self._tutorial_on_mousewheel = _on_mousewheel
-        
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        tutorial_window.bind_all("<TouchpadScroll>", _on_touchpad_scroll)
         
         # Tutorial sections data (icon, title, description)
         tutorial_sections = [
@@ -3974,7 +4175,7 @@ class BrainDockGUI:
                 "and you can resume whenever you are ready."
             ),
             (
-                "\u2193",  # Down arrow (download)
+                "\u2913",  # Download arrow (arrow to bar)
                 COLORS["accent_warm"],
                 "Get Your Report",
                 "When you stop your session, a PDF report is automatically saved to "
@@ -3982,30 +4183,35 @@ class BrainDockGUI:
             ),
         ]
         
+        # Calculate available width for text wrapping based on actual window size
+        # Window - padding (30*2) - scrollbar (~20) - text left padding (40) = available
+        text_available_width = max(200, window_width - 60 - 20 - 40)
+        
+        # Store description labels for dynamic resizing
+        desc_labels = []
+        
         # Create tutorial sections
         for i, (icon, icon_color, section_title, description) in enumerate(tutorial_sections):
-            section_frame = tk.Frame(scrollable_frame, bg=COLORS["bg_primary"])
+            section_frame = tk.Frame(content_frame, bg=COLORS["bg_primary"])
             section_frame.pack(fill=tk.X, pady=(0, 20))
             
             # Icon and title row
             header_frame = tk.Frame(section_frame, bg=COLORS["bg_primary"])
             header_frame.pack(fill=tk.X, anchor="w")
             
-            # Fixed-width container for icon to ensure consistent alignment
-            icon_container = tk.Frame(header_frame, bg=COLORS["bg_primary"], width=32, height=28)
-            icon_container.pack(side=tk.LEFT, padx=(0, 8))
-            icon_container.pack_propagate(False)  # Prevent container from shrinking
-            
-            # Icon label - use system font with fallback
-            icon_font = get_system_font(size=20, weight="normal")
+            # Icon label with fixed width for consistent alignment
+            # Height adapts to content for cross-platform compatibility
+            icon_font = get_system_font(size=18, weight="normal")
             icon_label = tk.Label(
-                icon_container,
+                header_frame,
                 text=icon,
                 font=icon_font,
                 fg=icon_color,
-                bg=COLORS["bg_primary"]
+                bg=COLORS["bg_primary"],
+                width=2,  # Fixed character width for alignment
+                anchor="center"
             )
-            icon_label.place(relx=0.5, rely=0.5, anchor="center")  # Center icon in container
+            icon_label.pack(side=tk.LEFT, padx=(0, 8))
             
             # Section title
             title_label = tk.Label(
@@ -4017,57 +4223,31 @@ class BrainDockGUI:
             )
             title_label.pack(side=tk.LEFT)
             
-            # Description using Text widget for better line spacing
-            # Estimate lines needed: chars / approx width in chars
-            # Font size 14 approx 8px width -> 560px / 8px = 70 chars
-            # We use width=65 to be safe
-            
-            desc_text = tk.Text(
+            # Description using Label with wraplength for proper text wrapping
+            # Labels handle word wrapping better than Text widgets at small sizes
+            desc_label = tk.Label(
                 section_frame,
+                text=description,
                 font=self.font_body,
                 fg=COLORS["text_secondary"],
                 bg=COLORS["bg_primary"],
-                bd=0,
-                highlightthickness=0,
-                wrap=tk.WORD,
-                width=65,
-                spacing2=6,  # Line spacing
-                spacing3=5,  # Paragraph spacing
-                cursor="arrow"
+                justify=tk.LEFT,
+                anchor="nw",
+                wraplength=text_available_width
             )
-            desc_text.insert("1.0", description)
-            
-            # Calculate height based on content using font measurement
-            # Available width: Window(680) - MainPad(60) - TextPad(32) - Scrollbar(20) = 568
-            available_width = 560  # Use 560 for safety
-            
-            num_lines = 0
-            for paragraph in description.split('\n'):
-                if not paragraph:
-                    num_lines += 1
-                    continue
-                    
-                current_line_width = 0
-                lines_in_paragraph = 1
-                
-                for word in paragraph.split():
-                    word_width = self.font_body.measure(word + " ")
-                    if current_line_width + word_width <= available_width:
-                        current_line_width += word_width
-                    else:
-                        lines_in_paragraph += 1
-                        current_line_width = word_width
-                
-                num_lines += lines_in_paragraph
-            
-            desc_text.configure(height=num_lines, state="disabled")
-            desc_text.pack(fill=tk.X, pady=(8, 0), padx=(43, 0))  # Slightly indented from title
-            
-            # Bind mousewheel to the text widget
-            desc_text.bind("<MouseWheel>", _on_mousewheel)
-            
-        # Bind mousewheel to all widgets in the scrollable frame
-        self._tutorial_bind_mousewheel(scrollable_frame)
+            desc_label.pack(fill=tk.X, pady=(8, 0), padx=(40, 0))  # Align with title text
+            desc_labels.append(desc_label)
+        
+        # Update description wraplength when content frame is resized
+        def _update_desc_wraplength(event):
+            """Update description label wraplength when window is resized."""
+            # Calculate new available width based on frame width
+            new_width = max(200, event.width - 40)  # Subtract text left padding
+            for label in desc_labels:
+                label.configure(wraplength=new_width)
+        
+        # Bind content frame configure event to update wraplength
+        content_frame.bind("<Configure>", _update_desc_wraplength)
         
         # Footer with "Got it" button
         footer_frame = tk.Frame(main_container, bg=COLORS["bg_primary"])
@@ -4076,7 +4256,7 @@ class BrainDockGUI:
         got_it_btn = RoundedButton(
             footer_frame,
             text="Got it!",
-            command=lambda: self._close_tutorial(tutorial_window, canvas),
+            command=tutorial_window.destroy,  # <Destroy> event will cleanup scroll bindings
             bg_color=COLORS["button_start"],
             hover_color=COLORS["button_start_hover"],
             fg_color=COLORS["text_white"],
@@ -4097,10 +4277,11 @@ class BrainDockGUI:
             tutorial_window: The tutorial window to close
             canvas: The canvas widget (unused, kept for compatibility)
         """
-        # Clean up references
-        self._tutorial_bind_mousewheel = None
-        self._tutorial_canvas = None
-        self._tutorial_on_mousewheel = None
+        # Clean up bindings
+        try:
+            tutorial_window.unbind_all("<MouseWheel>")
+        except:
+            pass
         tutorial_window.destroy()
         logger.debug("Tutorial popup closed")
     
@@ -4572,6 +4753,19 @@ class BrainDockGUI:
                     return
                 # For "not_determined", "authorized", or "unknown" - proceed normally
                 # "not_determined" will trigger the macOS permission prompt when camera opens
+            
+            # Check Windows camera permission status before trying to open camera
+            elif sys.platform == "win32":
+                logger.info("Checking Windows camera permission...")
+                permission_status = check_windows_camera_permission()
+                logger.info(f"Windows camera permission status: {permission_status}")
+                
+                if permission_status == "denied":
+                    # Permission not granted - show dialog to guide user
+                    self._show_camera_permission_denied()
+                    return
+                # For "authorized" or "unknown" - proceed normally
+                # "unknown" will let the normal camera open flow handle errors
 
         # Pre-check screen (Accessibility) permission for screen modes
         needs_screen = self.monitoring_mode in (config.MODE_SCREEN_ONLY, config.MODE_BOTH)
@@ -4735,7 +4929,7 @@ class BrainDockGUI:
         # We need to repack both to ensure correct order
         self.controls_container.pack_forget()
         
-        self.stats_container.pack(side=tk.LEFT, padx=(0, 40), anchor="n")
+        self.stats_container.pack(side=tk.LEFT, padx=(0, 20), anchor="n")
         self.controls_container.pack(side=tk.LEFT, anchor="n")
         
         # Reset sub-label to default
@@ -5315,7 +5509,9 @@ class BrainDockGUI:
             secs = active_seconds % 60
             
             time_str = f"{hours:02d}:{minutes:02d}:{secs:02d}"
-            self.timer_label.configure(text=time_str)
+            # Only update label when text changes to avoid unnecessary redraws
+            if self.timer_label.cget("text") != time_str:
+                self.timer_label.configure(text=time_str)
             
             # Only check usage limits and update badge every second (not every 100ms)
             # This reduces overhead while keeping timer display smooth
@@ -5532,7 +5728,7 @@ class BrainDockGUI:
         
         # Restore stats panel layout
         self.controls_container.pack_forget()
-        self.stats_container.pack(side=tk.LEFT, padx=(0, 40), anchor="n")
+        self.stats_container.pack(side=tk.LEFT, padx=(0, 20), anchor="n")
         self.controls_container.pack(side=tk.LEFT, anchor="n")
         
         # Reset button state
@@ -5557,23 +5753,44 @@ class BrainDockGUI:
 
     def _show_camera_permission_denied(self):
         """
-        Show dialog when macOS camera permission was previously denied.
+        Show dialog when camera permission was previously denied.
         Uses simple messagebox.askyesno() style like the PDF popup.
+        Platform-specific instructions for macOS and Windows.
         """
-        result = messagebox.askyesno(
-            "Camera Permission Required",
-            "Camera access was denied.\n\n"
-            "BrainDock needs camera access for focus tracking.\n\n"
-            "To enable:\n"
-            "1. Open System Settings\n"
-            "2. Go to Privacy & Security → Camera\n"
-            "3. Enable BrainDock in the list\n"
-            "4. Restart BrainDock\n\n"
-            "Would you like to open System Settings?"
-        )
+        if sys.platform == "darwin":
+            # macOS-specific message
+            result = messagebox.askyesno(
+                "Camera Permission Required",
+                "Camera access was denied.\n\n"
+                "BrainDock needs camera access for focus tracking.\n\n"
+                "To enable:\n"
+                "1. Open System Settings\n"
+                "2. Go to Privacy & Security → Camera\n"
+                "3. Enable BrainDock in the list\n"
+                "4. Restart BrainDock\n\n"
+                "Would you like to open System Settings?"
+            )
+            
+            if result:
+                open_macos_camera_settings()
         
-        if result:
-            open_macos_camera_settings()
+        elif sys.platform == "win32":
+            # Windows-specific message
+            result = messagebox.askyesno(
+                "Camera Permission Required",
+                "Camera access is not enabled.\n\n"
+                "BrainDock needs camera access for focus tracking.\n\n"
+                "To enable:\n"
+                "1. Open Windows Settings\n"
+                "2. Go to Privacy & Security → Camera\n"
+                "3. Turn on 'Camera access'\n"
+                "4. Turn on 'Let apps access your camera'\n"
+                "5. Restart BrainDock\n\n"
+                "Would you like to open Settings?"
+            )
+            
+            if result:
+                open_windows_camera_settings()
 
     def _show_camera_error(self):
         """Show camera access error dialog with platform-specific instructions."""
@@ -5596,7 +5813,29 @@ class BrainDockGUI:
             
             if result:
                 open_macos_camera_settings()
+        
+        elif sys.platform == "win32":
+            # Windows-specific - same askyesno style with Open Settings option
+            result = messagebox.askyesno(
+                "Camera Permission Required",
+                "Failed to access webcam.\n\n"
+                "On Windows, camera access may be disabled:\n\n"
+                "1. Open Windows Settings\n"
+                "2. Go to Privacy & Security → Camera\n"
+                "3. Turn on 'Camera access'\n"
+                "4. Turn on 'Let apps access your camera'\n"
+                "5. Restart BrainDock\n\n"
+                "Also check:\n"
+                "• Camera is connected\n"
+                "• No other app is using the camera\n\n"
+                "Would you like to open Settings?"
+            )
+            
+            if result:
+                open_windows_camera_settings()
+        
         else:
+            # Linux or other platforms - generic message
             message = (
                 "Failed to access webcam.\n\n"
                 "Please check:\n"
@@ -5715,12 +5954,17 @@ def main():
     license_manager = get_license_manager()
     
     if not license_manager.is_licensed() and not config.SKIP_LICENSE_CHECK:
-        # Create a temporary root window for payment screen
-        # Use same dimensions as main GUI
-        payment_root = tk.Tk()
-        normalize_tk_scaling(payment_root)  # Normalize for consistent font rendering
+        # Create a temporary root window for payment screen using CustomTkinter
+        # Apply same DPI settings as main GUI
+        if sys.platform == "darwin":
+            ctk.deactivate_automatic_dpi_awareness()
+            ctk.set_widget_scaling(1.0)
+            ctk.set_window_scaling(1.0)
+        ctk.set_appearance_mode("light")
+        
+        payment_root = ctk.CTk()
         payment_root.title("BrainDock - Activate License")
-        payment_root.configure(bg=COLORS["bg_primary"])
+        payment_root.configure(fg_color=COLORS["bg_primary"])
         
         # Set size and center the window (same as main GUI)
         # Use ScalingManager for proper screen dimension handling

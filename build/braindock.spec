@@ -39,7 +39,8 @@ datas = [
     (str(PROJECT_ROOT / 'data' / 'focus_statements.json'), 'data'),
     (str(PROJECT_ROOT / 'data' / 'braindock_alert_sound.mp3'), 'data'),
     (str(PROJECT_ROOT / 'data' / 'braindock_alert_sound.wav'), 'data'),  # WAV for Windows
-    # Assets
+    # Assets (includes fonts in assets/fonts/ for cross-platform typography)
+    # Bundled fonts: Inter (sans-serif), Lora (serif) - both SIL Open Font License
     (str(PROJECT_ROOT / 'assets'), 'assets'),
     # Legal documents
     (str(PROJECT_ROOT / 'legal'), 'legal'),
