@@ -12,6 +12,7 @@ For Windows: Creates BrainDock.exe
 import sys
 import os
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_data_files
 
 # Get the project root directory
 SPEC_DIR = Path(SPECPATH)
@@ -62,6 +63,18 @@ try:
         datas.append((stripe_data_path, 'stripe/data'))
 except ImportError:
     pass
+
+# Windows-only: Bundle timezone data (tzdata package)
+# On Windows, Python uses tzdata for timezone info since the OS doesn't have
+# built-in IANA timezone data like macOS/Linux. Without bundling this,
+# the app shows "Downloading America/New_York..." popups on first launch
+# as it extracts 600+ timezone files, causing a 5+ minute delay.
+# macOS has /usr/share/zoneinfo/ built-in, so this is not needed there.
+if IS_WINDOWS:
+    try:
+        datas += collect_data_files('tzdata')
+    except Exception:
+        print("WARNING: Could not collect tzdata - timezone initialization may be slow on Windows")
 
 # Hidden imports - modules that PyInstaller might miss
 hiddenimports = [
@@ -141,6 +154,9 @@ if IS_WINDOWS:
         'pywinauto.controls.uia_controls',
         'comtypes',
         'comtypes.client',
+        # Timezone support - Windows lacks built-in IANA timezone data
+        'tzdata',
+        'zoneinfo',
     ])
 
 # Exclude unnecessary modules to reduce size
