@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 import base64
 import logging
+import socket
 from typing import Dict, Optional, Any
 
 import openai
@@ -222,6 +223,7 @@ RULES:
             
             # Call OpenAI Vision API with retry for transient errors
             # Matches Gemini detector behavior for consistency
+            # Includes socket errors for network issues (DNS, connection failures)
             response = retry_with_backoff(
                 make_api_call,
                 max_retries=2,
@@ -230,8 +232,12 @@ RULES:
                     openai.APIConnectionError,
                     openai.APITimeoutError,
                     openai.RateLimitError,
+                    openai.InternalServerError,  # Server-side errors are retryable
                     ConnectionError,
                     TimeoutError,
+                    socket.timeout,
+                    socket.gaierror,  # DNS lookup failures
+                    OSError,  # Covers various network-related OS errors
                 )
             )
             

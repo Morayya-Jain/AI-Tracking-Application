@@ -3,6 +3,7 @@
 import cv2
 import numpy as np
 import logging
+import socket
 from typing import Dict, Optional, Any
 
 import google.generativeai as genai
@@ -207,13 +208,17 @@ RULES:
                 retryable = (
                     ConnectionError,
                     TimeoutError,
+                    socket.timeout,
+                    socket.gaierror,  # DNS lookup failures
+                    OSError,  # Covers various network-related OS errors
                     google_exceptions.ResourceExhausted,  # Rate limit
                     google_exceptions.ServiceUnavailable,  # Server issue
                     google_exceptions.DeadlineExceeded,  # Timeout
+                    google_exceptions.InternalServerError,  # Server-side errors
                 )
             except ImportError:
                 # Fall back to basic exceptions if google.api_core not available
-                retryable = (ConnectionError, TimeoutError)
+                retryable = (ConnectionError, TimeoutError, socket.timeout, socket.gaierror, OSError)
             
             # Call Gemini Vision API with retry logic for transient errors
             response = retry_with_backoff(
@@ -224,8 +229,30 @@ RULES:
                 retryable_exceptions=retryable
             )
             
+            # Check for content safety blocks before accessing text
+            # Gemini may block responses due to safety filters
+            if hasattr(response, 'prompt_feedback') and response.prompt_feedback:
+                feedback = response.prompt_feedback
+                if hasattr(feedback, 'block_reason') and feedback.block_reason:
+                    logger.warning(f"Gemini response blocked by safety filter: {feedback.block_reason}")
+                    return get_safe_default_result()
+            
+            # Check if candidates exist and are not blocked
+            if hasattr(response, 'candidates') and response.candidates:
+                candidate = response.candidates[0]
+                if hasattr(candidate, 'finish_reason'):
+                    finish_reason = str(candidate.finish_reason)
+                    if 'SAFETY' in finish_reason or 'BLOCKED' in finish_reason:
+                        logger.warning(f"Gemini candidate blocked: {finish_reason}")
+                        return get_safe_default_result()
+            
             # Extract response content
-            content = response.text
+            try:
+                content = response.text
+            except ValueError as e:
+                # response.text raises ValueError if no valid candidates
+                logger.warning(f"Gemini response has no valid text: {e}")
+                return get_safe_default_result()
             
             # Debug log the response
             logger.debug(f"Gemini API raw response: {content[:200] if content else 'EMPTY'}")
@@ -254,7 +281,12 @@ RULES:
             logger.warning(f"Gemini Vision API timeout: {e}")
             return get_safe_default_result()
         except Exception as e:
-            logger.error(f"Gemini Vision API error: {e}")
+            # Check for authentication errors specifically
+            error_str = str(e).lower()
+            if 'api key' in error_str or 'authentication' in error_str or 'unauthorized' in error_str:
+                logger.error(f"Gemini API authentication error - check API key: {e}")
+            else:
+                logger.error(f"Gemini Vision API error: {e}")
             return get_safe_default_result()
     
     def detect_presence(self, frame: np.ndarray) -> bool:

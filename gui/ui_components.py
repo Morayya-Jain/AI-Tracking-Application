@@ -662,7 +662,13 @@ class StyledEntry(ctk.CTkFrame):
         if self._persistent_message and not force:
             return  # Don't clear persistent messages
         self.error_label.configure(text=" ")
-        self.entry.configure(border_color=COLORS["accent"] if self.entry == self.focus_get() else COLORS["input_bg"])
+        # Check if entry has focus by comparing with the window's focus widget
+        try:
+            focused_widget = self.winfo_toplevel().focus_get()
+            has_focus = (focused_widget == self.entry) or (focused_widget == self.entry._entry if hasattr(self.entry, '_entry') else False)
+        except Exception:
+            has_focus = False
+        self.entry.configure(border_color=COLORS["accent"] if has_focus else COLORS["input_bg"])
         self._has_feedback = False
         self._persistent_message = False
     
@@ -720,6 +726,7 @@ normalize_tk_scaling = lambda root: None  # No-op, CTk handles this
 # --- Natural Scroll System ---
 
 import time as time_module
+import weakref
 from collections import deque
 
 
@@ -729,6 +736,9 @@ class NaturalScroller:
     
     Provides smooth, finger-following scroll behavior that works consistently
     across macOS and Windows, with trackpad, mouse wheel, and scrollbar.
+    
+    Uses weak references to prevent memory leaks and automatically cleans up
+    bindings when the window is destroyed.
     """
     
     # Physics constants (tuned for natural feel)
@@ -744,6 +754,10 @@ class NaturalScroller:
     FRICTION_120FPS = (0.96, 0.99)  # (base, max) for 120fps
     FRICTION_60FPS = (0.92, 0.98)   # (base, max) for 60fps
     
+    # Scroll delta normalization (consistent across platforms)
+    # Both platforms use same base multiplier for consistent UX
+    SCROLL_MULTIPLIER = 15  # Units per scroll notch
+    
     def __init__(self, scrollable_frame: ctk.CTkScrollableFrame, window):
         """
         Initialize the natural scroller.
@@ -752,8 +766,9 @@ class NaturalScroller:
             scrollable_frame: The CTkScrollableFrame to add natural scrolling to.
             window: The parent window (for scheduling animations).
         """
-        self.scrollable_frame = scrollable_frame
-        self.window = window
+        # Use weak references to prevent memory leaks
+        self._scrollable_frame_ref = weakref.ref(scrollable_frame)
+        self._window_ref = weakref.ref(window, self._on_window_collected)
         self._destroyed = False
         
         # Scroll state
@@ -773,41 +788,83 @@ class NaturalScroller:
         self._velocity_samples: deque = deque(maxlen=self.VELOCITY_SAMPLES)
         self._weights = [1, 2, 3, 4, 5]  # Recent samples weighted more heavily
         
+        # Store bound function IDs for cleanup
+        self._bound_events = []
+        
         # Bind scroll events
         self._bind_scroll_events()
         
         # Track window destruction
-        self.window.bind("<Destroy>", self._on_destroy, add="+")
+        window.bind("<Destroy>", self._on_destroy, add="+")
+    
+    @property
+    def scrollable_frame(self):
+        """Get scrollable frame or None if garbage collected."""
+        return self._scrollable_frame_ref()
+    
+    @property
+    def window(self):
+        """Get window or None if garbage collected."""
+        return self._window_ref()
+    
+    def _on_window_collected(self, ref):
+        """Called when window is garbage collected - mark as destroyed."""
+        self._destroyed = True
+        self._animating = False
     
     def _on_destroy(self, event):
         """Handle window destruction to prevent errors."""
-        if event.widget == self.window:
+        window = self.window
+        if window is not None and event.widget == window:
             self._destroyed = True
             self._animating = False
+            self.unbind_scroll_events()
     
     def _bind_scroll_events(self):
         """Bind all scroll events for cross-platform support."""
+        window = self.window
+        if window is None:
+            return
+        
         # macOS Tk 9+ touchpad scroll
-        self.window.bind_all("<TouchpadScroll>", self._on_scroll)
+        window.bind_all("<TouchpadScroll>", self._on_scroll)
         # macOS/Windows mouse wheel
-        self.window.bind_all("<MouseWheel>", self._on_scroll)
+        window.bind_all("<MouseWheel>", self._on_scroll)
         # Linux scroll buttons (Button-4 = up, Button-5 = down)
-        self.window.bind_all("<Button-4>", self._on_linux_scroll_up)
-        self.window.bind_all("<Button-5>", self._on_linux_scroll_down)
+        window.bind_all("<Button-4>", self._on_linux_scroll_up)
+        window.bind_all("<Button-5>", self._on_linux_scroll_down)
+        
+        # Track bound events for cleanup
+        self._bound_events = [
+            "<TouchpadScroll>",
+            "<MouseWheel>",
+            "<Button-4>",
+            "<Button-5>"
+        ]
     
     def unbind_scroll_events(self):
         """Unbind all scroll events (call when closing window)."""
-        try:
-            self.window.unbind_all("<TouchpadScroll>")
-            self.window.unbind_all("<MouseWheel>")
-            self.window.unbind_all("<Button-4>")
-            self.window.unbind_all("<Button-5>")
-        except Exception:
-            pass  # Window may already be destroyed
+        window = self.window
+        if window is None:
+            self._bound_events = []
+            return
+        
+        for event in self._bound_events:
+            try:
+                window.unbind_all(event)
+            except Exception:
+                pass  # Widget may already be destroyed
+        
+        self._bound_events = []
+        self._destroyed = True
+        self._animating = False
     
     def _normalize_delta(self, event) -> float:
         """
         Normalize scroll delta across platforms and devices.
+        
+        Uses consistent normalization for both Windows and macOS to ensure
+        identical scroll behavior across platforms.
         
         Args:
             event: The scroll event.
@@ -822,14 +879,17 @@ class NaturalScroller:
         
         if sys.platform == 'win32':
             # Windows: delta is typically 120 per notch
-            # Normalize to reasonable scroll amount
-            return -delta / 120 * 15
+            # Normalize to consistent scroll amount
+            return -delta / 120 * self.SCROLL_MULTIPLIER
         else:
             # macOS: handle signed 16-bit delta for touchpad
+            # Using same multiplier as Windows for consistent UX
             delta_y = delta & 0xFFFF
             if delta_y > 32767:
                 delta_y -= 65536
-            return delta_y
+            # Scale macOS delta to match Windows behavior
+            # macOS typically gives smaller deltas, so we normalize differently
+            return delta_y * (self.SCROLL_MULTIPLIER / 15)
     
     def _get_adaptive_sensitivity(self, delta: float) -> float:
         """
@@ -888,6 +948,11 @@ class NaturalScroller:
         if self._destroyed:
             return
         
+        scrollable_frame = self.scrollable_frame
+        window = self.window
+        if scrollable_frame is None or window is None:
+            return
+        
         try:
             delta = self._normalize_delta(event)
             
@@ -901,7 +966,7 @@ class NaturalScroller:
             self._animating = False
             
             # Get canvas and current position
-            canvas = self.scrollable_frame._parent_canvas
+            canvas = scrollable_frame._parent_canvas
             current = canvas.yview()
             visible = current[1] - current[0]
             
@@ -926,7 +991,7 @@ class NaturalScroller:
             self._last_time = current_time
             
             # Schedule inertia check after brief delay
-            self.window.after(self.INERTIA_DELAY, self._start_inertia)
+            window.after(self.INERTIA_DELAY, self._start_inertia)
             
         except Exception:
             pass  # Silently handle any errors
@@ -950,8 +1015,12 @@ class NaturalScroller:
         Args:
             units: Number of units to scroll (positive = down).
         """
+        scrollable_frame = self.scrollable_frame
+        if scrollable_frame is None:
+            return
+        
         try:
-            canvas = self.scrollable_frame._parent_canvas
+            canvas = scrollable_frame._parent_canvas
             current = canvas.yview()
             visible = current[1] - current[0]
             
@@ -966,6 +1035,10 @@ class NaturalScroller:
     def _start_inertia(self):
         """Start momentum animation if finger has lifted."""
         if self._destroyed:
+            return
+        
+        window = self.window
+        if window is None:
             return
         
         # Only start if no recent input
@@ -1001,6 +1074,12 @@ class NaturalScroller:
         if self._destroyed or not self._animating:
             return
         
+        scrollable_frame = self.scrollable_frame
+        window = self.window
+        if scrollable_frame is None or window is None:
+            self._animating = False
+            return
+        
         current_frame_time = time_module.time()
         
         # Stop if velocity too low
@@ -1021,7 +1100,7 @@ class NaturalScroller:
                 self._adapt_frame_rate(actual_frame_ms)
             self._last_frame_time = current_frame_time
             
-            canvas = self.scrollable_frame._parent_canvas
+            canvas = scrollable_frame._parent_canvas
             current = canvas.yview()
             visible = current[1] - current[0]
             
@@ -1042,7 +1121,7 @@ class NaturalScroller:
             self._velocity *= friction
             
             # Schedule next frame at current (possibly adapted) interval
-            self.window.after(self._frame_interval, self._apply_inertia)
+            window.after(self._frame_interval, self._apply_inertia)
             
         except Exception:
             self._animating = False

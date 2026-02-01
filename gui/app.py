@@ -149,6 +149,7 @@ def check_windows_camera_permission() -> str:
     if sys.platform != "win32":
         return "authorized"  # Non-Windows: let normal flow handle
     
+    cap = None
     try:
         import cv2
         
@@ -158,6 +159,7 @@ def check_windows_camera_permission() -> str:
         
         if not cap.isOpened():
             cap.release()
+            cap = None
             logger.debug("Windows camera check: VideoCapture failed to open")
             return "denied"
         
@@ -168,6 +170,7 @@ def check_windows_camera_permission() -> str:
         # Attempt to read - this is where permission denial typically manifests
         ret, frame = cap.read()
         cap.release()
+        cap = None
         
         if ret and frame is not None:
             logger.debug("Windows camera check: Camera access authorized")
@@ -178,6 +181,12 @@ def check_windows_camera_permission() -> str:
             
     except Exception as e:
         logger.debug(f"Windows camera check error: {e}")
+        # Ensure camera is released on any exception
+        if cap is not None:
+            try:
+                cap.release()
+            except Exception:
+                pass
         return "unknown"
 
 
@@ -1091,13 +1100,14 @@ class Badge(tk.Canvas):
         return len(self.text) * 8 + self._padding
 
     def _update_width_if_needed(self):
-        """Update canvas width if text requires more space than minimum."""
+        """Update canvas width if text requires more or less space."""
         required_width = self._calculate_text_width()
         current_width = int(self["width"])
         
-        # Expand if needed, but never shrink below minimum
+        # Expand or shrink as needed, but never go below minimum
         new_width = max(self.min_width, required_width)
         
+        # Update if width changed (both expanding and shrinking)
         if new_width != current_width:
             self.configure(width=new_width)
 
@@ -2030,7 +2040,7 @@ class BrainDockGUI:
                     # Main value - store item ID for updates
                     card_data["main"] = card.create_text(
                         center_x, int(72 * self.current_scale), 
-                        text="0 sec" if card_type != "rate" else "0%", 
+                        text=format_stat_time(0) if card_type != "rate" else "0%", 
                         anchor="center", 
                         font=self.font_stat, 
                         fill=COLORS["text_primary"]
@@ -2268,14 +2278,14 @@ class BrainDockGUI:
         
         if card_type == "focus":
             title = "Today's Focus"
-            main_val = "0 sec"
+            main_val = format_stat_time(0)
             sub_label = "Focused"
-            sub_val = "0 sec"
+            sub_val = format_stat_time(0)
         elif card_type == "distractions":
             title = "Today's Distractions"
-            main_val = "0 sec"
+            main_val = format_stat_time(0)
             sub_label = "Total"
-            sub_val = "0 sec"
+            sub_val = format_stat_time(0)
         else:  # rate
             title = "Today's Focus Rate"
             main_val = "0%"
@@ -5053,6 +5063,9 @@ class BrainDockGUI:
                     # Small sleep to prevent CPU overload
                     time.sleep(0.05)
                     
+        except (KeyboardInterrupt, SystemExit):
+            # Allow graceful shutdown - don't treat these as errors
+            logger.info("Detection loop interrupted by shutdown signal")
         except Exception as e:
             logger.error(f"Detection loop error: {e}")
             self.root.after(0, lambda: self._show_detection_error(str(e)))
@@ -5193,6 +5206,9 @@ class BrainDockGUI:
                 # Small sleep to prevent CPU overload
                 time.sleep(0.1)
                 
+        except (KeyboardInterrupt, SystemExit):
+            # Allow graceful shutdown - don't treat these as errors
+            logger.info("Screen detection loop interrupted by shutdown signal")
         except Exception as e:
             logger.error(f"Screen detection loop error: {e}")
             self.root.after(0, lambda: self._show_detection_error(f"Screen monitoring: {str(e)}"))

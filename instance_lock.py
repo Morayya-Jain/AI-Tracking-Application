@@ -112,29 +112,51 @@ class InstanceLock:
             True if lock acquired, False otherwise.
         """
         try:
-            # Open lock file - use 'a+' to not truncate existing content
-            # We'll truncate and write only after successfully acquiring the lock
-            self._lock_handle = open(self.lock_file, 'a+')
-            
-            # Try to acquire exclusive lock (non-blocking)
             if sys.platform == 'win32':
                 # Windows implementation
+                # Open file in read/write binary mode with sharing disabled
+                # Use 'r+b' if file exists, 'w+b' otherwise (avoids empty file issues)
                 import msvcrt
+                
                 try:
-                    # Lock first byte of file (non-blocking)
-                    msvcrt.locking(self._lock_handle.fileno(), msvcrt.LK_NBLCK, 1)
+                    if self.lock_file.exists():
+                        self._lock_handle = open(self.lock_file, 'r+b')
+                    else:
+                        # Create with initial content so we have bytes to lock
+                        self._lock_handle = open(self.lock_file, 'w+b')
+                        self._lock_handle.write(b'0' * 32)  # Write placeholder content
+                        self._lock_handle.flush()
+                        self._lock_handle.seek(0)
+                except (IOError, OSError) as e:
+                    logger.debug(f"Failed to open lock file: {e}")
+                    if self._lock_handle:
+                        try:
+                            self._lock_handle.close()
+                        except Exception:
+                            pass
+                        self._lock_handle = None
+                    return False
+                
+                try:
+                    # Lock a reasonable number of bytes to ensure proper locking
+                    # Lock 32 bytes to avoid issues with empty files
+                    msvcrt.locking(self._lock_handle.fileno(), msvcrt.LK_NBLCK, 32)
                     if write_pid:
                         self._lock_handle.seek(0)
                         self._lock_handle.truncate()
-                        self._lock_handle.write(str(os.getpid()))
+                        pid_bytes = str(os.getpid()).encode('utf-8').ljust(32, b'\0')
+                        self._lock_handle.write(pid_bytes)
                         self._lock_handle.flush()
                     return True
-                except IOError:
+                except (IOError, OSError):
                     self._lock_handle.close()
                     self._lock_handle = None
                     return False
             else:
                 # Unix (macOS/Linux) implementation
+                # Open lock file - use 'a+' to not truncate existing content
+                self._lock_handle = open(self.lock_file, 'a+')
+                
                 import fcntl
                 try:
                     # LOCK_EX = exclusive lock, LOCK_NB = non-blocking
@@ -274,7 +296,8 @@ class InstanceLock:
                 if sys.platform == 'win32':
                     import msvcrt
                     try:
-                        msvcrt.locking(self._lock_handle.fileno(), msvcrt.LK_UNLCK, 1)
+                        # Unlock the same number of bytes we locked
+                        msvcrt.locking(self._lock_handle.fileno(), msvcrt.LK_UNLCK, 32)
                     except Exception:
                         pass  # Ignore unlock errors
                 # On Unix, closing the file releases flock automatically
@@ -284,11 +307,18 @@ class InstanceLock:
                 self._acquired = False
                 
                 # Clean up lock file (optional, but tidy)
-                try:
-                    if self.lock_file.exists():
-                        self.lock_file.unlink()
-                except Exception:
-                    pass  # Ignore cleanup errors
+                # On Windows, the file might still be in use briefly - retry with delay
+                for attempt in range(3):
+                    try:
+                        if self.lock_file.exists():
+                            self.lock_file.unlink()
+                        break
+                    except PermissionError:
+                        if attempt < 2:
+                            import time
+                            time.sleep(0.1)  # Brief delay before retry
+                    except Exception:
+                        break  # Ignore other cleanup errors
                     
                 logger.debug("Instance lock released")
             except Exception as e:

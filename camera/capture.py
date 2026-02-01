@@ -246,8 +246,12 @@ class CameraCapture:
             
             print(f"[BrainDock] Opening camera at index {self.camera_index}...")
             # Use DirectShow backend on Windows for faster initialization
+            # Fall back to default backend if DirectShow fails (some cameras don't support it)
             if sys.platform == "win32":
                 self.cap = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)
+                if not self.cap.isOpened():
+                    logger.info("DirectShow backend failed, trying default backend...")
+                    self.cap = cv2.VideoCapture(self.camera_index)
             else:
                 self.cap = cv2.VideoCapture(self.camera_index)
             print(f"[BrainDock] VideoCapture created, isOpened={self.cap.isOpened()}")
@@ -313,15 +317,15 @@ class CameraCapture:
             # cap.read() may fail while the user is still responding to the dialog.
             # We retry many times with delays to give the user unlimited time to respond.
             # macOS: 120 attempts * 0.5s = 60 seconds max wait time for permission dialog
-            # Windows: 5 attempts * 0.2s = ~1 second (DirectShow returns quickly)
+            # Windows: 25 attempts * 0.3s = ~7.5 seconds (some USB cameras need time to initialize)
             # Linux: 3 attempts * 0.5s = 1.5 seconds
             if sys.platform == "darwin":
                 max_read_attempts = 120  # 60 seconds for permission dialog
             elif sys.platform == "win32":
-                max_read_attempts = 5    # Quick retries with DirectShow
+                max_read_attempts = 25   # More retries for USB cameras that initialize slowly
             else:
                 max_read_attempts = 3    # Linux unchanged
-            read_delay = 0.2 if sys.platform == "win32" else 0.5
+            read_delay = 0.3 if sys.platform == "win32" else 0.5
             
             if sys.platform == "darwin":
                 print(f"[BrainDock] Requesting camera access...")

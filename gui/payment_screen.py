@@ -838,6 +838,11 @@ class PaymentScreen:
         # Don't filter by event.widget - focus can go to any child widget when
         # user returns to app. The _payment_detected flag handles deduplication.
         
+        # Atomically check and set state to prevent race conditions
+        session_id = None
+        payment_info = None
+        should_activate = False
+        
         with self._polling_lock:
             if self._payment_detected:
                 return
@@ -850,10 +855,12 @@ class PaymentScreen:
                 payment_info = self._payment_info
                 self._payment_session_id = None
                 self._payment_info = None
-            else:
-                return
+                should_activate = True
         
-        self._complete_activation(session_id, payment_info)
+        # Complete activation outside lock to avoid potential deadlocks
+        # State has been atomically captured, so this is thread-safe
+        if should_activate:
+            self._complete_activation(session_id, payment_info)
     
     def _try_auto_activate(self):
         """
@@ -865,6 +872,11 @@ class PaymentScreen:
         when verification finishes, the app proceeds automatically without
         requiring another focus event.
         """
+        # Atomically check and set state to prevent race conditions
+        session_id = None
+        payment_info = None
+        should_activate = False
+        
         with self._polling_lock:
             # Already activated via focus event - nothing to do
             if self._payment_detected:
@@ -882,8 +894,11 @@ class PaymentScreen:
             payment_info = self._payment_info
             self._payment_session_id = None
             self._payment_info = None
+            should_activate = True
         
-        self._complete_activation(session_id, payment_info)
+        # Complete activation outside lock to avoid potential deadlocks
+        if should_activate:
+            self._complete_activation(session_id, payment_info)
     
     def _complete_activation(self, session_id: str, info: dict):
         """Complete the license activation process."""

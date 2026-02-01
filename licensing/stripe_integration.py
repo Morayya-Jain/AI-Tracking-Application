@@ -341,9 +341,19 @@ class StripeIntegration:
             stripe.api_key = secret_key
             # Configure network settings to prevent indefinite hangs
             stripe.max_network_retries = 2  # Retry on network errors
-            stripe.default_http_client = None  # Use default with sensible timeout
+            # Set explicit timeout (30 seconds) to prevent indefinite hangs
+            try:
+                # Configure timeout via the default HTTP client
+                from stripe.http_client import RequestsClient
+                stripe.default_http_client = RequestsClient(timeout=30)
+            except (ImportError, AttributeError):
+                # Fallback: try to set timeout via API settings
+                try:
+                    stripe.api_timeout = 30
+                except AttributeError:
+                    pass  # Older stripe versions may not support this
             self._initialized = True
-            logger.debug("Stripe integration initialized")
+            logger.debug("Stripe integration initialized with 30s timeout")
         elif not STRIPE_AVAILABLE:
             logger.error("Stripe SDK not available")
         elif not secret_key:

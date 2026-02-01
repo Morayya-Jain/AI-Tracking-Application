@@ -1264,4 +1264,11 @@ def generate_report(
         return filepath
     except Exception as e:
         logger.error(f"Error generating PDF: {e}")
+        # Clean up partial/corrupt PDF file on failure
+        try:
+            if filepath.exists():
+                filepath.unlink()
+                logger.debug(f"Cleaned up partial PDF file: {filepath}")
+        except Exception as cleanup_error:
+            logger.warning(f"Failed to clean up partial PDF: {cleanup_error}")
         raise

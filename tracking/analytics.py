@@ -276,6 +276,13 @@ def get_focus_percentage(stats: Dict[str, Any]) -> float:
         focus_pct = (present_time / active_time) * 100.0
         
         # Clamp to 0-100 for safety (handles any floating point edge cases)
+        # Log warning if clamping is needed (indicates potential data issue)
+        if focus_pct < 0.0 or focus_pct > 100.0:
+            import logging
+            logging.getLogger(__name__).warning(
+                f"Focus percentage out of range ({focus_pct:.2f}%), clamping to 0-100. "
+                f"present_time={present_time}, active_time={active_time}"
+            )
         return min(100.0, max(0.0, focus_pct))
     except (TypeError, ValueError) as e:
         # If any conversion fails, return safe default

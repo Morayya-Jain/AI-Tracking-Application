@@ -15,6 +15,9 @@ PRECISION GUIDELINE:
 
 import json
 import logging
+import os
+import tempfile
+import threading
 from datetime import datetime, date
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -38,6 +41,7 @@ class DailyStatsTracker:
         """Initialize the daily stats tracker and load existing data."""
         # Use USER_DATA_DIR for writable user data (persists across app updates)
         self.data_file: Path = config.USER_DATA_DIR / "daily_stats.json"
+        self._lock = threading.Lock()  # Thread safety for data operations
         self.data = self._load_data()
         
         # Check if we need to reset for a new day
@@ -74,14 +78,45 @@ class DailyStatsTracker:
         }
     
     def _save_data(self) -> None:
-        """Save daily stats to JSON file."""
+        """
+        Save daily stats to JSON file atomically.
+        
+        Uses atomic write (write to temp file, then rename) to prevent
+        data corruption if the app crashes during save.
+        """
         try:
             # Ensure parent directory exists
             self.data_file.parent.mkdir(parents=True, exist_ok=True)
             
-            with open(self.data_file, 'w') as f:
-                json.dump(self.data, f, indent=2)
-            logger.debug(f"Saved daily stats: {self.data}")
+            # Atomic write: write to temp file, then rename
+            temp_fd, temp_path = tempfile.mkstemp(
+                suffix='.tmp',
+                prefix='daily_stats_',
+                dir=self.data_file.parent
+            )
+            
+            try:
+                with os.fdopen(temp_fd, 'w') as f:
+                    json.dump(self.data, f, indent=2)
+                
+                # Atomic rename (POSIX) or replace (cross-platform)
+                try:
+                    os.replace(temp_path, self.data_file)
+                except OSError:
+                    # Fallback for systems where replace doesn't work
+                    if self.data_file.exists():
+                        self.data_file.unlink()
+                    os.rename(temp_path, self.data_file)
+                
+                logger.debug(f"Saved daily stats: {self.data}")
+            except Exception:
+                # Clean up temp file on error
+                try:
+                    os.unlink(temp_path)
+                except OSError:
+                    pass
+                raise
+                
         except (IOError, OSError, PermissionError) as e:
             logger.error(f"Failed to save daily stats: {e}")
     
@@ -98,7 +133,7 @@ class DailyStatsTracker:
     def add_session_stats(self, focus_seconds: float, away_seconds: float, 
                           gadget_seconds: float, screen_distraction_seconds: float) -> None:
         """
-        Add statistics from a completed session to daily totals.
+        Add statistics from a completed session to daily totals (thread-safe).
         
         Uses floats for full precision. Truncation to int happens only at display time.
         
@@ -115,25 +150,26 @@ class DailyStatsTracker:
         if any(x < 0 for x in [focus_seconds, away_seconds, gadget_seconds, screen_distraction_seconds]):
             raise ValueError("All time values must be non-negative")
         
-        # Check for day change before adding (in case app was left open overnight)
-        self._check_and_reset_if_new_day()
-        
-        # Add to daily totals
-        self.data["focus_seconds"] += focus_seconds
-        self.data["away_seconds"] += away_seconds
-        self.data["gadget_seconds"] += gadget_seconds
-        self.data["screen_distraction_seconds"] += screen_distraction_seconds
-        
-        # Total distractions = away + gadget + screen (NOT paused)
-        self.data["distraction_seconds"] = (
-            self.data["away_seconds"] + 
-            self.data["gadget_seconds"] + 
-            self.data["screen_distraction_seconds"]
-        )
-        
-        self._save_data()
-        logger.info(f"Added session stats to daily totals. Focus: {focus_seconds}s, "
-                   f"Distractions: {away_seconds + gadget_seconds + screen_distraction_seconds}s")
+        with self._lock:
+            # Check for day change before adding (in case app was left open overnight)
+            self._check_and_reset_if_new_day()
+            
+            # Add to daily totals
+            self.data["focus_seconds"] += focus_seconds
+            self.data["away_seconds"] += away_seconds
+            self.data["gadget_seconds"] += gadget_seconds
+            self.data["screen_distraction_seconds"] += screen_distraction_seconds
+            
+            # Total distractions = away + gadget + screen (NOT paused)
+            self.data["distraction_seconds"] = (
+                self.data["away_seconds"] + 
+                self.data["gadget_seconds"] + 
+                self.data["screen_distraction_seconds"]
+            )
+            
+            self._save_data()
+            logger.info(f"Added session stats to daily totals. Focus: {focus_seconds}s, "
+                       f"Distractions: {away_seconds + gadget_seconds + screen_distraction_seconds}s")
     
     def get_daily_stats(self) -> Dict[str, Any]:
         """

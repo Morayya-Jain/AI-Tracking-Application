@@ -300,6 +300,12 @@ class Blocklist:
         This method is safe and never crashes - invalid patterns are automatically
         removed from the blocklist (self-cleaning behavior).
         
+        Domain Matching Rules:
+        - Patterns like "x.com" are matched as domain boundaries (not substring)
+        - "x.com" will match "x.com", "www.x.com", "://x.com" but NOT "netflix.com"
+        - Patterns starting with "://" require that exact prefix (e.g., "://x.com")
+        - App names are still matched as substrings for flexibility
+        
         Args:
             url: Current browser URL (if available)
             window_title: Active window title
@@ -311,32 +317,37 @@ class Blocklist:
         patterns = self.get_all_patterns()
         patterns_to_remove = []
         
-        # Combine all text to check (lowercase for case-insensitive matching)
-        check_texts = []
-        if url:
-            try:
-                check_texts.append(url.lower())
-            except Exception as e:
-                logger.warning(f"Error processing URL '{url}': {e}")
-        if window_title:
-            try:
-                check_texts.append(window_title.lower())
-            except Exception as e:
-                logger.warning(f"Error processing window_title '{window_title}': {e}")
-        if app_name:
-            try:
-                check_texts.append(app_name.lower())
-            except Exception as e:
-                logger.warning(f"Error processing app_name '{app_name}': {e}")
+        # Prepare texts for matching (lowercase)
+        url_lower = url.lower() if url else None
+        window_title_lower = window_title.lower() if window_title else None
+        app_name_lower = app_name.lower() if app_name else None
         
-        # Check each pattern against all texts (with error handling)
+        # Check each pattern against appropriate targets
         for pattern in patterns:
             try:
                 pattern_lower = pattern.lower()
-                for text in check_texts:
-                    if pattern_lower in text:
-                        logger.debug(f"Distraction detected: '{pattern}' found in '{text[:50]}'")
+                
+                # Determine if pattern is a domain pattern (contains '.')
+                is_domain_pattern = '.' in pattern_lower and not pattern_lower.startswith(' ')
+                
+                if is_domain_pattern:
+                    # Domain matching: use boundary-aware matching to prevent
+                    # "x.com" from matching "netflix.com"
+                    if url_lower and self._match_domain(pattern_lower, url_lower):
+                        logger.debug(f"Distraction detected: '{pattern}' matched URL '{url[:50]}'")
                         return True, pattern
+                    if window_title_lower and self._match_domain(pattern_lower, window_title_lower):
+                        logger.debug(f"Distraction detected: '{pattern}' matched window title")
+                        return True, pattern
+                else:
+                    # App name matching: use simple substring match
+                    # Check all text sources for app name patterns
+                    check_texts = [t for t in [window_title_lower, app_name_lower] if t]
+                    for text in check_texts:
+                        if pattern_lower in text:
+                            logger.debug(f"Distraction detected: '{pattern}' found in '{text[:50]}'")
+                            return True, pattern
+                    
             except Exception as e:
                 # Log the error and mark pattern for removal (self-cleaning)
                 logger.error(f"Invalid pattern '{pattern}' caused error: {e} - marking for removal")
@@ -348,6 +359,49 @@ class Blocklist:
             self._remove_invalid_patterns(patterns_to_remove)
         
         return False, None
+    
+    def _match_domain(self, pattern: str, text: str) -> bool:
+        """
+        Match a domain pattern against text with proper boundary checking.
+        
+        Prevents false positives like "x.com" matching "netflix.com".
+        Supports:
+        - Exact match: "x.com" in URL containing "/x.com/"
+        - Protocol prefix: "://x.com"
+        - www prefix: "www.x.com"
+        - Subdomain: ".x.com" (e.g., "mail.x.com")
+        
+        Args:
+            pattern: Domain pattern (lowercase)
+            text: Text to search in (lowercase)
+            
+        Returns:
+            True if domain pattern matches with proper boundaries
+        """
+        # If pattern includes protocol prefix (e.g., "://x.com"), match directly
+        if pattern.startswith("://") or pattern.startswith("/"):
+            return pattern in text
+        
+        # Check for exact domain boundaries
+        # Valid domain boundaries: start of string, protocol (://), slash (/), dot (.)
+        
+        # Match patterns for domain boundaries
+        boundary_prefixes = [
+            f"://{pattern}",      # Protocol: "://x.com"
+            f"://www.{pattern}",  # Protocol with www: "://www.x.com"
+            f".{pattern}",        # Subdomain: ".x.com" (must have preceding char)
+            f"/{pattern}",        # Path start: "/x.com"
+        ]
+        
+        for prefix in boundary_prefixes:
+            if prefix in text:
+                return True
+        
+        # Also check if pattern is at the very start (rare but possible)
+        if text.startswith(pattern) or text.startswith(f"www.{pattern}"):
+            return True
+        
+        return False
     
     def _remove_invalid_patterns(self, patterns: List[str]):
         """

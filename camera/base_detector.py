@@ -73,11 +73,24 @@ def extract_json_from_response(content: str) -> str:
             pass
     
     # Try to extract JSON object from surrounding text
+    # Handle nested braces by finding matching pairs
     if '{' in content and '}' in content:
         try:
             start = content.index('{')
-            end = content.rindex('}') + 1
-            return content[start:end]
+            # Find the matching closing brace by counting nesting
+            depth = 0
+            end = start
+            for i, char in enumerate(content[start:], start):
+                if char == '{':
+                    depth += 1
+                elif char == '}':
+                    depth -= 1
+                    if depth == 0:
+                        end = i + 1
+                        break
+            
+            if end > start:
+                return content[start:end]
         except ValueError:
             pass
     

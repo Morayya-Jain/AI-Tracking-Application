@@ -1,8 +1,12 @@
 """Session management and event logging."""
 
+import logging
+import threading
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 import config
+
+logger = logging.getLogger(__name__)
 
 
 class Session:
@@ -26,6 +30,7 @@ class Session:
         self.events: List[Dict[str, Any]] = []
         self.current_state: Optional[str] = None
         self.state_start_time: Optional[datetime] = None
+        self._lock = threading.Lock()  # Thread safety for event logging
         
     def _generate_session_id(self) -> str:
         """Generate a human-readable session ID with day and time."""
@@ -77,7 +82,7 @@ class Session:
     
     def log_event(self, event_type: str, timestamp: Optional[datetime] = None) -> None:
         """
-        Log a state change event.
+        Log a state change event (thread-safe).
         
         When the state changes (e.g., present -> away), this method:
         1. Finalizes the previous state by calculating its duration
@@ -98,45 +103,47 @@ class Session:
         }
         if event_type not in valid_event_types:
             # Log warning but don't crash - allows forward compatibility
-            import logging
-            logging.getLogger(__name__).warning(f"Unknown event type: {event_type}")
+            logger.warning(f"Unknown event type: {event_type}")
         
         if timestamp is None:
             timestamp = datetime.now()
         
-        # If this is a state change, finalize the previous state
-        if event_type != self.current_state:
-            # Save previous state for console message logic
-            previous_state = self.current_state
-            
-            if self.current_state and self.state_start_time:
-                # Pass the timestamp to ensure continuous timeline (no gaps)
-                self._finalize_current_state(timestamp)
-            
-            # Start new state
-            self.current_state = event_type
-            self.state_start_time = timestamp
-            
-            # Print console update for major events
-            # Note: Pause/resume messages are handled by the GUI directly
-            if event_type == config.EVENT_AWAY:
-                print(f"⚠ Moved away from desk ({timestamp.strftime('%I:%M %p')})")
-            elif event_type == config.EVENT_PRESENT:
-                # Don't print "Back at desk" when resuming from pause
-                # The GUI already prints "▶ Session resumed" for that case
-                if previous_state != config.EVENT_PAUSED:
-                    print(f"✓ Back at desk ({timestamp.strftime('%I:%M %p')})")
-            elif event_type == config.EVENT_GADGET_SUSPECTED:
-                print(f"📱 On another gadget ({timestamp.strftime('%I:%M %p')})")
-            elif event_type == config.EVENT_SCREEN_DISTRACTION:
-                print(f"🌐 Screen distraction detected ({timestamp.strftime('%I:%M %p')})")
-            elif event_type == config.EVENT_PAUSED:
-                # Pause message is handled by GUI, but log for consistency
-                pass  # GUI prints "⏸ Session paused"
+        with self._lock:
+            # If this is a state change, finalize the previous state
+            if event_type != self.current_state:
+                # Save previous state for console message logic
+                previous_state = self.current_state
+                
+                if self.current_state and self.state_start_time:
+                    # Pass the timestamp to ensure continuous timeline (no gaps)
+                    self._finalize_current_state(timestamp)
+                
+                # Start new state
+                self.current_state = event_type
+                self.state_start_time = timestamp
+                
+                # Print console update for major events
+                # Note: Pause/resume messages are handled by the GUI directly
+                if event_type == config.EVENT_AWAY:
+                    print(f"⚠ Moved away from desk ({timestamp.strftime('%I:%M %p')})")
+                elif event_type == config.EVENT_PRESENT:
+                    # Don't print "Back at desk" when resuming from pause
+                    # The GUI already prints "▶ Session resumed" for that case
+                    if previous_state != config.EVENT_PAUSED:
+                        print(f"✓ Back at desk ({timestamp.strftime('%I:%M %p')})")
+                elif event_type == config.EVENT_GADGET_SUSPECTED:
+                    print(f"📱 On another gadget ({timestamp.strftime('%I:%M %p')})")
+                elif event_type == config.EVENT_SCREEN_DISTRACTION:
+                    print(f"🌐 Screen distraction detected ({timestamp.strftime('%I:%M %p')})")
+                elif event_type == config.EVENT_PAUSED:
+                    # Pause message is handled by GUI, but log for consistency
+                    pass  # GUI prints "⏸ Session paused"
     
     def _finalize_current_state(self, end_time: Optional[datetime] = None) -> None:
         """
         Finalize the current state by calculating its duration and adding to events.
+        
+        Note: This method assumes the caller holds self._lock.
         
         Args:
             end_time: Optional end timestamp. If None, uses current time.
@@ -152,6 +159,10 @@ class Session:
         
         # Skip events with zero or negative duration (prevents data corruption)
         if duration <= 0:
+            logger.warning(
+                f"Discarding event with non-positive duration: type={self.current_state}, "
+                f"duration={duration:.3f}s (start={self.state_start_time}, end={actual_end_time})"
+            )
             return
         
         event = {

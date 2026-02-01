@@ -280,13 +280,25 @@ USAGE_DATA_FILE = USER_DATA_DIR / "usage_data.json"  # User data (persists)
 
 # Stripe Payment Configuration
 # Get your keys from: https://dashboard.stripe.com/apikeys
-# Bundled Stripe keys (from bundled_keys.py generated at build time)
+# Bundled Stripe keys - reuse the bundled_keys module if already imported above
+# Note: bundled_keys import is attempted once at the API key section above
+_BUNDLED_STRIPE_SECRET = ""
+_BUNDLED_STRIPE_PUBLISHABLE = ""
+_BUNDLED_STRIPE_PRICE_ID = ""
+
 try:
-    import bundled_keys
-    _BUNDLED_STRIPE_SECRET = bundled_keys.get_key("STRIPE_SECRET_KEY")
-    _BUNDLED_STRIPE_PUBLISHABLE = bundled_keys.get_key("STRIPE_PUBLISHABLE_KEY")
-    _BUNDLED_STRIPE_PRICE_ID = bundled_keys.get_key("STRIPE_PRICE_ID")
-except ImportError:
+    # Check if bundled_keys was already imported successfully
+    if 'bundled_keys' in dir():
+        _BUNDLED_STRIPE_SECRET = bundled_keys.get_key("STRIPE_SECRET_KEY")
+        _BUNDLED_STRIPE_PUBLISHABLE = bundled_keys.get_key("STRIPE_PUBLISHABLE_KEY")
+        _BUNDLED_STRIPE_PRICE_ID = bundled_keys.get_key("STRIPE_PRICE_ID")
+    else:
+        # Try importing bundled_keys (handles case where it wasn't imported earlier)
+        import bundled_keys as _bk
+        _BUNDLED_STRIPE_SECRET = _bk.get_key("STRIPE_SECRET_KEY")
+        _BUNDLED_STRIPE_PUBLISHABLE = _bk.get_key("STRIPE_PUBLISHABLE_KEY")
+        _BUNDLED_STRIPE_PRICE_ID = _bk.get_key("STRIPE_PRICE_ID")
+except (ImportError, NameError):
     # Development mode or bundled_keys not available
     # Fall back to environment variables (old method, for backwards compatibility)
     _BUNDLED_STRIPE_SECRET = os.getenv("BUNDLED_STRIPE_SECRET_KEY", "")

@@ -10,6 +10,9 @@ Includes basic integrity protection to prevent casual file tampering.
 import hashlib
 import json
 import logging
+import os
+import tempfile
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -38,6 +41,7 @@ class UsageLimiter:
         """Initialize the usage limiter and load existing usage data."""
         self.data_file: Path = config.USAGE_DATA_FILE
         self._tampered: bool = False  # Set True if integrity check fails
+        self._lock = threading.Lock()  # Thread safety for data operations
         self.data = self._load_data()
     
     def _compute_integrity_hash(self, data: dict) -> str:
@@ -138,7 +142,12 @@ class UsageLimiter:
         }
     
     def _save_data(self) -> None:
-        """Save usage data to JSON file with integrity hash."""
+        """
+        Save usage data to JSON file with integrity hash.
+        
+        Uses atomic write (write to temp file, then rename) to prevent
+        data corruption if the app crashes during save.
+        """
         try:
             # Ensure parent directory exists
             self.data_file.parent.mkdir(parents=True, exist_ok=True)
@@ -147,9 +156,36 @@ class UsageLimiter:
             save_data = dict(self.data)
             save_data["_integrity"] = self._compute_integrity_hash(self.data)
             
-            with open(self.data_file, 'w') as f:
-                json.dump(save_data, f, indent=2)
-            logger.debug(f"Saved usage data with integrity hash")
+            # Atomic write: write to temp file, then rename
+            # This prevents data corruption if the app crashes during write
+            temp_fd, temp_path = tempfile.mkstemp(
+                suffix='.tmp',
+                prefix='usage_',
+                dir=self.data_file.parent
+            )
+            
+            try:
+                with os.fdopen(temp_fd, 'w') as f:
+                    json.dump(save_data, f, indent=2)
+                
+                # Atomic rename (POSIX) or replace (cross-platform)
+                try:
+                    os.replace(temp_path, self.data_file)
+                except OSError:
+                    # Fallback for systems where replace doesn't work
+                    if self.data_file.exists():
+                        self.data_file.unlink()
+                    os.rename(temp_path, self.data_file)
+                
+                logger.debug("Saved usage data with integrity hash")
+            except Exception:
+                # Clean up temp file on error
+                try:
+                    os.unlink(temp_path)
+                except OSError:
+                    pass
+                raise
+                
         except (IOError, OSError, PermissionError) as e:
             logger.error(f"Failed to save usage data: {e}")
     
@@ -284,7 +320,7 @@ class UsageLimiter:
     
     def record_usage(self, seconds: int) -> None:
         """
-        Record usage time.
+        Record usage time (thread-safe).
         
         Args:
             seconds: Number of seconds to add to total usage. Must be non-negative.
@@ -295,16 +331,18 @@ class UsageLimiter:
         if seconds < 0:
             raise ValueError("Usage seconds must be non-negative")
         
-        if self.data["first_use"] is None:
-            self.data["first_use"] = datetime.now().isoformat()
-        
-        self.data["total_used_seconds"] += seconds
-        self._save_data()
+        with self._lock:
+            if self.data["first_use"] is None:
+                self.data["first_use"] = datetime.now().isoformat()
+            
+            self.data["total_used_seconds"] += seconds
+            self._save_data()
     
     def end_session(self) -> None:
-        """Record the end of a session."""
-        self.data["last_session_end"] = datetime.now().isoformat()
-        self._save_data()
+        """Record the end of a session (thread-safe)."""
+        with self._lock:
+            self.data["last_session_end"] = datetime.now().isoformat()
+            self._save_data()
     
     def validate_password(self, password: str) -> bool:
         """
@@ -327,7 +365,7 @@ class UsageLimiter:
     
     def grant_extension(self) -> int:
         """
-        Grant a time extension (after password validation).
+        Grant a time extension (after password validation, thread-safe).
         
         Also clears any tampered state and re-saves with valid integrity hash.
         Respects the max_extensions limit.
@@ -335,27 +373,28 @@ class UsageLimiter:
         Returns:
             Number of seconds added, or 0 if extension limit reached.
         """
-        # Check if extension limit reached
-        if not self.can_grant_extension():
-            logger.warning(f"Extension limit reached ({self.get_extensions_count()}/{self.get_max_extensions()})")
-            return 0
-        
-        extension_seconds = config.MVP_EXTENSION_SECONDS
-        
-        # Clear tampered state - user has legitimately authenticated
-        if self._tampered:
-            logger.info("Clearing tampered state after successful password authentication")
-            self._tampered = False
-        
-        self.data["total_granted_seconds"] += extension_seconds
-        self.data["extensions_granted"] += 1
-        self._save_data()
-        
-        logger.info(f"Granted {extension_seconds}s extension. "
-                   f"Total granted: {self.data['total_granted_seconds']}s "
-                   f"({self.get_extensions_count()}/{self.get_max_extensions()} extensions used)")
-        
-        return extension_seconds
+        with self._lock:
+            # Check if extension limit reached
+            if not self.can_grant_extension():
+                logger.warning(f"Extension limit reached ({self.get_extensions_count()}/{self.get_max_extensions()})")
+                return 0
+            
+            extension_seconds = config.MVP_EXTENSION_SECONDS
+            
+            # Clear tampered state - user has legitimately authenticated
+            if self._tampered:
+                logger.info("Clearing tampered state after successful password authentication")
+                self._tampered = False
+            
+            self.data["total_granted_seconds"] += extension_seconds
+            self.data["extensions_granted"] += 1
+            self._save_data()
+            
+            logger.info(f"Granted {extension_seconds}s extension. "
+                       f"Total granted: {self.data['total_granted_seconds']}s "
+                       f"({self.get_extensions_count()}/{self.get_max_extensions()} extensions used)")
+            
+            return extension_seconds
     
     def format_time(self, seconds: int, full_precision: bool = False) -> str:
         """
