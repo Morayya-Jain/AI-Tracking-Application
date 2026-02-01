@@ -42,15 +42,15 @@ MIN_HEIGHT = 680
 
 # Font scaling bounds (base_size, min_size, max_size)
 FONT_BOUNDS = {
-    "timer": (50, 32, 66),      # Base 50pt, min 32, max 66
-    "stat": (20, 14, 26),       # Base 20pt, min 14, max 26
+    "timer": (60, 42, 78),      # Base 60pt, min 42, max 78
+    "stat": (23, 15, 29),       # Base 23pt, min 15, max 29
     "title": (24, 17, 32),      # Base 24pt, min 17, max 32
-    "status": (18, 14, 24),     # Base 18pt, min 14, max 24
+    "status": (19, 15, 25),     # Base 19pt, min 15, max 25
     "body": (15, 11, 19),       # Base 15pt, min 11, max 19
     "button": (13, 10, 16),     # Base 13pt, min 10, max 16
     "small": (13, 10, 17),      # Base 13pt, min 10, max 17
     "badge": (10, 8, 14),       # Base 10pt, min 8, max 14
-    "caption": (12, 9, 15),     # Base 12pt, min 9, max 15
+    "caption": (12, 9, 16),     # Base 12pt, min 9, max 16
     "heading": (26, 18, 34),    # For payment screen (unchanged)
     "subheading": (20, 15, 26), # For payment screen (unchanged)
     "input": (16, 12, 20),      # For input fields (unchanged)
@@ -604,16 +604,17 @@ class StyledEntry(ctk.CTkFrame):
         )
         self.entry.pack(fill="x")
         
-        # Error/success label (no fixed height - allows dynamic sizing)
+        # Error/success label - internal pady adds space for descenders
         self.error_label = ctk.CTkLabel(
             self,
             text=" ",
             text_color=COLORS["status_gadget"],
             font=get_ctk_font("small"),
             anchor="w",
-            justify="left"
+            justify="left",
+            pady=6
         )
-        self.error_label.pack(fill="x", pady=(2, 0))
+        self.error_label.pack(fill="x", pady=(4, 0))
         
         # Bind configure event to update wraplength dynamically
         self.error_label.bind("<Configure>", self._update_wraplength)

@@ -65,6 +65,14 @@ try:
 except ImportError:
     pass
 
+# CustomTkinter assets - required for proper widget rendering in bundled apps
+# Without this, CTkScrollableFrame and other widgets have viewport/layout issues
+# that cause content to be invisible or incorrectly positioned
+try:
+    datas += collect_data_files('customtkinter')
+except Exception:
+    print("WARNING: Could not collect customtkinter assets - UI may have rendering issues")
+
 # Windows-only: Bundle timezone data (tzdata package)
 # On Windows, Python uses tzdata for timezone info since the OS doesn't have
 # built-in IANA timezone data like macOS/Linux. Without bundling this,

@@ -895,8 +895,9 @@ def generate_report(
     # Sanitize session_id to prevent path traversal attacks
     # Remove any directory components and keep only the filename-safe part
     safe_session_id = Path(session_id).name  # Strips directory components
-    # Also remove any potentially dangerous characters
-    safe_session_id = "".join(c for c in safe_session_id if c.isalnum() or c in '-_')
+    # Keep alphanumeric, spaces, periods, hyphens, underscores (all safe in filenames)
+    safe_session_id = "".join(c for c in safe_session_id if c.isalnum() or c in ' .-_')
+    safe_session_id = safe_session_id.strip()  # Remove leading/trailing whitespace
     if not safe_session_id:
         safe_session_id = "session"  # Fallback if session_id was entirely invalid
     

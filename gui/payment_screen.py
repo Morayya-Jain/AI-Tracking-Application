@@ -520,19 +520,32 @@ class PaymentScreen:
             )
             stripe_warning.pack(pady=(0, self._scale_padding(10)))
         
-        # 3. Divider
+        # 3. Divider (using grid for consistent cross-platform alignment)
         div_frame = ctk.CTkFrame(self.inner_frame, fg_color="transparent")
         div_frame.pack(fill="x", pady=(divider_top_pad, divider_bottom_pad), padx=section_pad)
         
-        ctk.CTkFrame(div_frame, fg_color=COLORS["border"], height=1).pack(side="left", fill="x", expand=True)
-        ctk.CTkLabel(
+        # Configure grid columns: lines expand equally, OR text stays fixed
+        div_frame.grid_columnconfigure(0, weight=1)
+        div_frame.grid_columnconfigure(1, weight=0)
+        div_frame.grid_columnconfigure(2, weight=1)
+        
+        # Left line - centered vertically in its cell
+        left_line = ctk.CTkFrame(div_frame, fg_color=COLORS["border"], height=1)
+        left_line.grid(row=0, column=0, sticky="ew", pady=0)
+        
+        # OR label - centered by default in grid
+        or_label = ctk.CTkLabel(
             div_frame, 
             text="OR", 
             font=get_ctk_font("small", self.screen_scale),
             text_color=COLORS["text_secondary"],
             fg_color="transparent"
-        ).pack(side="left", padx=section_pad)
-        ctk.CTkFrame(div_frame, fg_color=COLORS["border"], height=1).pack(side="left", fill="x", expand=True)
+        )
+        or_label.grid(row=0, column=1, padx=section_pad)
+        
+        # Right line - centered vertically in its cell
+        right_line = ctk.CTkFrame(div_frame, fg_color=COLORS["border"], height=1)
+        right_line.grid(row=0, column=2, sticky="ew", pady=0)
         
         # 4. Stripe Session ID Section
         ctk.CTkLabel(
@@ -545,7 +558,7 @@ class PaymentScreen:
         ).pack(fill="x", pady=(section_pad, btn_pad), padx=section_pad)
         
         verify_row = ctk.CTkFrame(self.inner_frame, fg_color="transparent")
-        verify_row.pack(fill="x", padx=section_pad)
+        verify_row.pack(fill="x", padx=section_pad, pady=(0, self._scale_padding(8)))
         
         # Scaled verify button
         verify_btn_width = self._scale_dimension(100, min_value=80)
@@ -564,7 +577,7 @@ class PaymentScreen:
         self.verify_button.pack(side="right", anchor="n")
         
         self.session_entry = StyledEntry(verify_row, placeholder="cs_live_...", height=verify_btn_height)
-        self.session_entry.pack(side="left", fill="x", expand=True, padx=(0, self._scale_padding(10)), anchor="n")
+        self.session_entry.pack(side="left", fill="both", expand=True, padx=(0, self._scale_padding(10)))
         self.session_entry.bind_return(self._on_verify_payment)
         self.session_entry.entry.bind("<Key>", self._clear_entry_feedback, add="+")
         

@@ -31,7 +31,8 @@ class Session:
         """Generate a human-readable session ID with day and time."""
         now = datetime.now()
         day = now.strftime("%A")  # Full day name: Monday, Tuesday, etc.
-        time = now.strftime("%I.%M %p")  # Time format: 2.45PM, 9.30AM
+        # Time format: "2.45PM" - strip leading zero, no space before AM/PM
+        time = now.strftime("%I.%M%p").lstrip('0')
         
         return f"BrainDock {day} {time}"
     
