@@ -299,8 +299,11 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         timeout-minutes: 60
         run: |
+          # Activate venv for Python scripts (Pillow needed for DMG background)
+          source .venv-build/bin/activate
+
           IDENTITY="Developer ID Application: Morayya Jain ($APPLE_TEAM_ID)"
-          
+
           # Generate DMG background if it doesn't exist
           if [ ! -f "build/dmg_background.png" ]; then
             python build/create_dmg_background.py
