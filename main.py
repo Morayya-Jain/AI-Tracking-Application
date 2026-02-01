@@ -12,7 +12,25 @@ Usage:
     python main.py --gui    # Launch GUI mode (explicit)
 """
 
+# =============================================================================
+# PyInstaller bundled app path fix - MUST BE BEFORE ANY OTHER IMPORTS
+# This ensures CustomTkinter and other packages can find their assets
+# when running from a PyInstaller bundle.
+# See: https://github.com/TomSchimansky/CustomTkinter/issues/1374
+# =============================================================================
+import os
 import sys
+
+if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+    # Running as a PyInstaller bundle
+    # Change working directory to the extraction folder so CustomTkinter
+    # can find its assets (themes, fonts) relative to the module location
+    _bundle_dir = sys._MEIPASS
+    os.chdir(_bundle_dir)
+    # Also ensure the bundle directory is in the Python path
+    if _bundle_dir not in sys.path:
+        sys.path.insert(0, _bundle_dir)
+
 import time
 import logging
 import threading
